@@ -6,7 +6,7 @@ import {
     LINES,
     PASSENGER_STOPS,
     LOCATION_ABBREVIATIONS,
-    ROUTE_CODES
+    DESTINATION_CODES
 } from "../../../constants";
 import {
     MAX_HISTORY_REQUEST_LIMIT,
@@ -30,7 +30,7 @@ const CONSTANTS = {
     LINES,
     PASSENGER_STOPS,
     LOCATION_ABBREVIATIONS,
-    ROUTE_CODES,
+    ROUTE_CODES: DESTINATION_CODES,
 }
 
 export default function registerEndpoint(app: FastifyInstance) {
@@ -103,7 +103,7 @@ export default function registerEndpoint(app: FastifyInstance) {
                         ROUTE_CODES: {
                             type: 'object',
                             additionalProperties: { $ref: 'location' },
-                            description: 'Map of route codes to destinations',
+                            description: 'Map of destination codes to the location code of the corresponding destination',
                         }
                     },
                     required: Object.keys(CONSTANTS),
