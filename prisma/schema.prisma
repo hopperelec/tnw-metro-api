@@ -1,0 +1,260 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// --- Core Models ---
+
+/// A heartbeat, representing a single cycle of data retrieval.
+model Heartbeat {
+  /// The time the heartbeat started.
+  startedAt DateTime @id @db.Timestamp(3)
+
+  /// The time the heartbeat ended, or null if it is still ongoing or was interrupted.
+  endedAt DateTime? @db.Timestamp(3)
+
+  /// Times API train data that started during this heartbeat.
+  startedTimesApiTrainData TimesApiTrainData[] @relation("Started")
+  /// Times API train data that ended during this heartbeat (i.e., was replaced or the train went inactive).
+  endedTimesApiTrainData   TimesApiTrainData[] @relation("Ended")
+  /// Geo API train data that started during this heartbeat.
+  startedGeoApiTrainData   GeoApiTrainData[]   @relation("Started")
+  /// Geo API train data that ended during this heartbeat (i.e., was replaced or the train went inactive).
+  endedGeoApiTrainData     GeoApiTrainData[]   @relation("Ended")
+  /// Errors that occurred during this heartbeat.
+  errors                   HeartbeatError[]
+  /// Warnings generated during this heartbeat.
+  warnings                 HeartbeatWarning[]
+}
+
+/// The type of event associated with a train status update.
+model TrainEventType {
+  id Int @id @db.UnsignedTinyInt @default(autoincrement())
+
+  /// Human-readable name of the event type.
+  name String @unique
+
+  /// Times API train data with this event type.
+  timesApiTrainData TimesApiTrainData[]
+  /// Geo API train data with this event type.
+  geoApiTrainData   GeoApiTrainData[]
+}
+
+/// A train as identified by its TRN.
+model Train {
+  id Int @id @db.UnsignedSmallInt @default(autoincrement())
+
+  /// Train Running Number. Should always be a 3-digit number, but stored as a string in case of malformed data.
+  trn String @unique
+
+  /// Times API data for this train.
+  timesApiHistory TimesApiTrainData[]
+  /// Geo API statuses for this train.
+  geoApiHistory   GeoApiTrainData[]
+}
+
+/// A platform at a station.
+model ParsedPlatform {
+  id Int @id @default(autoincrement())
+
+  /// Human-readable station name.
+  station        String
+  /// Platform number
+  platformNumber Int @db.UnsignedTinyInt
+
+  /// Geo API updates where this platform was parsed from the last seen event.
+  geoApiUpdates   GeoApiTrainData[]
+  /// Unparsed platforms that were successfully parsed to this platform.
+  unparsedEntries UnparsedPlatform[]
+
+  @@unique([station, platformNumber])
+}
+
+/// A platform string as received from an API, before parsing.
+model UnparsedPlatform {
+  id Int @id @default(autoincrement())
+
+  /// The raw platform string. Do not expect this to be in any particular format.
+  raw String @unique
+
+  parsedPlatformId Int?
+  /// A parsed platform, if parsing was successful.
+  parsedPlatform   ParsedPlatform? @relation(fields: [parsedPlatformId], references: [id], onDelete: Cascade)
+
+  /// Times API train data for which this platform was the last event location.
+  timesApiTrainData TimesApiTrainData[]
+
+  /// Planned destinations planned from this platform onwards.
+  plannedDestinations PlannedDestination[]
+}
+
+/// A destination for a train. Not always a station name (e.g. "Not In Service", "Terminates").
+model Destination {
+  id Int @id @default(autoincrement())
+
+  /// The destination string.
+  name String @unique
+
+  /// Planned destinations (from the Times API) associated with this destination.
+  plannedDestinations PlannedDestination[]
+  /// Times API train data whose first planned destination is this destination.
+  timesApiFirstPlannedDestinations TimesApiTrainData[] @relation("FirstPlannedDestination")
+  /// Geo API statuses currently heading to this destination.
+  geoApiStatuses      GeoApiTrainData[]
+}
+
+// --- Times API ---
+
+/// De-duplicated data from the Times API for a single train.
+model TimesApiTrainData {
+  id Int @id @default(autoincrement())
+
+  trainId Int @db.UnsignedSmallInt
+  /// The train this update is for.
+  train   Train @relation(fields: [trainId], references: [id], onDelete: Cascade)
+
+  startHeartbeatAt DateTime @db.Timestamp(3)
+  /// The heartbeat during which this data first appeared.
+  startHeartbeat   Heartbeat @relation("Started", fields: [startHeartbeatAt], references: [startedAt], onDelete: Cascade)
+
+  endHeartbeatAt DateTime? @db.Timestamp(3)
+  /// The heartbeat during which this data was replaced or the train went inactive.
+  /// This is null if the data is still current.
+  endHeartbeat   Heartbeat? @relation("Ended", fields: [endHeartbeatAt], references: [startedAt], onDelete: Cascade)
+
+  lastEventLocationId Int
+  /// The platform associated with the last event for this train.
+  lastEventLocation   UnparsedPlatform @relation(fields: [lastEventLocationId], references: [id], onDelete: Cascade)
+
+  lastEventTypeId Int @db.UnsignedTinyInt
+  /// The type of the last event for this train.
+  lastEventType   TrainEventType @relation(fields: [lastEventTypeId], references: [id], onDelete: Cascade)
+
+  /// The time of the last event for this train.
+  lastEventTime DateTime @db.Timestamp(3)
+
+  /// The planned destinations for this train.
+  /// Note that changes to planned destinations are only reflected when the last event also changes.
+  plannedDestinations PlannedDestination[]
+
+  firstPlannedDestinationId Int?
+  /// The first of `plannedDestinations` (i.e. where the train is currently heading).
+  /// Duplicated here so that data can be efficiently filtered by it.
+  firstPlannedDestination   Destination? @relation("FirstPlannedDestination", fields: [firstPlannedDestinationId], references: [id], onDelete: Cascade)
+
+  @@unique([trainId, startHeartbeatAt])
+}
+
+/// A planned destination for a train according to the Times API.
+model PlannedDestination {
+  statusId Int
+  /// The Times API status this planned destination belongs to.
+  status   TimesApiTrainData @relation(fields: [statusId], references: [id], onDelete: Cascade)
+
+  destinationId Int
+  /// The destination.
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+
+  fromPlatformId Int
+  /// The platform this destination is planned from.
+  fromPlatform   UnparsedPlatform @relation(fields: [fromPlatformId], references: [id], onDelete: Cascade)
+
+  /// The time from which this destination is planned.
+  fromTime     DateTime @db.Timestamp(3)
+
+  @@id([statusId, destinationId, fromTime])
+}
+
+// --- Geo API ---
+
+/// De-duplicated data from the Geo API for a single train.
+///
+/// Note:
+/// The Geo API provides a "last seen" string for each train, which is expected to be in the format
+///  `<event type> <station name> platform <platform number> at <time>`.
+/// This model intends to store the parsed components of that string where possible.
+/// If the string cannot be parsed, the raw string is stored in `rawLastSeen` instead,
+///  and the parsed fields (`lastEventPlatform`, `lastEventType`, `lastEventTime`) are left null.
+model GeoApiTrainData {
+  id Int @id @default(autoincrement())
+
+  trainId Int @db.UnsignedSmallInt
+  /// The train this update is for.
+  train   Train @relation(fields: [trainId], references: [id], onDelete: Cascade)
+
+  startHeartbeatAt DateTime @db.Timestamp(3)
+  /// The heartbeat during which this data first appeared.
+  startHeartbeat   Heartbeat @relation("Started", fields: [startHeartbeatAt], references: [startedAt], onDelete: Cascade)
+
+  endHeartbeatAt DateTime? @db.Timestamp(3)
+  /// The heartbeat during which this data was replaced or the train went inactive.
+  /// This is null if the data is still current.
+  endHeartbeat   Heartbeat? @relation("Ended", fields: [endHeartbeatAt], references: [startedAt], onDelete: Cascade)
+
+  destinationId Int
+  /// The current destination for this train.
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+
+  /// The raw last seen string from the API if it could not be parsed.
+  /// See note in model documentation.
+  rawLastSeen String?
+
+  // Extracted fields from the last seen string
+
+  lastEventPlatformId Int?
+  /// The platform this status is associated with.
+  /// See note in model documentation.
+  lastEventPlatform   ParsedPlatform? @relation(fields: [lastEventPlatformId], references: [id], onDelete: Cascade)
+
+  lastEventTypeId Int? @db.UnsignedTinyInt
+  /// The type of the event.
+  /// See note in model documentation.
+  lastEventType   TrainEventType? @relation(fields: [lastEventTypeId], references: [id], onDelete: Cascade)
+
+  /// The time of the event.
+  /// See note in model documentation.
+  lastEventTime DateTime? @db.Timestamp(3)
+
+  @@unique([trainId, startHeartbeatAt])
+}
+
+// --- Diagnostics ---
+
+/// An identifier for an API that generated an error or warning.
+enum ApiType {
+  TIMES
+  GEO
+  GATEWAY
+}
+
+/// An error that occurred during a heartbeat.
+model HeartbeatError {
+  id Int @id @default(autoincrement())
+
+  heartbeatAt DateTime @db.Timestamp(3)
+  /// The heartbeat this error was produced during.
+  heartbeat   Heartbeat @relation(fields: [heartbeatAt], references: [startedAt], onDelete: Cascade)
+
+  /// The API that produced this error.
+  api     ApiType
+  /// A human-readable error message.
+  message String @db.Text
+}
+
+/// A warning generated during a heartbeat.
+model HeartbeatWarning {
+  id Int @id @default(autoincrement())
+
+  heartbeatAt DateTime @db.Timestamp(3)
+  /// The heartbeat this warning was produced during.
+  heartbeat   Heartbeat @relation(fields: [heartbeatAt], references: [startedAt], onDelete: Cascade)
+
+  /// The API that produced this warning.
+  api  ApiType
+  /// Additional arbitrary data related to this warning.
+  data Json
+}

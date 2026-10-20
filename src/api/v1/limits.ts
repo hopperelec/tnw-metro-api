@@ -1,0 +1,9 @@
+export const MAX_HISTORY_REQUEST_LIMIT = 300;
+export const DEFAULT_HISTORY_REQUEST_LIMIT = 10;
+
+export const MAX_SUBSCRIPTION_TOKENS = 250;
+export const MAX_SUBSCRIPTION_TOKENS_PER_IP = 5;
+export const MAX_SUBSCRIPTIONS_PER_TOKEN = 50;
+export const MAX_STREAMS_PER_TOKEN = 1;
+export const MAX_SUBSCRIPTION_FILTER_VALUES = 100;
+export const SUBSCRIPTION_TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour in milliseconds
