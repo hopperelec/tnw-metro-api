@@ -8,6 +8,10 @@
     "verbatimModuleSyntax": true,
     "lib": ["esnext"],
     "types": ["bun"],
+    // The private library is optional, so isn't a dependency. Bun resolves this when running too, not just `tsc`.
+    "paths": {
+      "tnw-metro-api-private": ["../tnw-metro-api-private"]
+    },
 
     "strict": true,
     // Parts of `strict` which the code doesn't pass yet, so should be enabled once it does
