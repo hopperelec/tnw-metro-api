@@ -6,9 +6,9 @@
   "scripts": {
     "start": "bun src/index.ts",
     "typecheck": "tsc",
-    "prisma:generate": "bunx --bun prisma generate",
-    "prisma:create-migration": "bunx --bun prisma migrate dev",
-    "prisma:deploy": "bunx --bun prisma migrate deploy"
+    "prisma:generate": "bun node_modules/prisma/build/index.js generate",
+    "prisma:create-migration": "bun node_modules/prisma/build/index.js migrate dev",
+    "prisma:deploy": "bun node_modules/prisma/build/index.js migrate deploy"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.1",

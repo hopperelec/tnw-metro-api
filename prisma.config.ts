@@ -1,14 +1,7 @@
 import { defineConfig } from 'prisma/config'
 
-// Bun loads `.env` itself, but Node (which IDEs' Prisma extensions use to load this) doesn't
-if (typeof Bun === 'undefined') {
-    try {
-        process.loadEnvFile(new URL('.env', import.meta.url));
-    } catch (e) {
-        if (e.code !== 'ENOENT') throw e;
-    }
-}
-
+// `.env` is loaded by Bun, so the Prisma CLI must be run with `bun` (as the scripts in `package.json` do).
+// Running it with `bunx --bun` doesn't work, since that makes Bun act like Node, which doesn't load `.env`.
 export default defineConfig({
     schema: 'prisma/schema.prisma',
     migrations: {
