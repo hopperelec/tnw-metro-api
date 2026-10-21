@@ -1,4 +1,4 @@
-import {FastifyInstance} from "fastify";
+import type {FastifyInstance} from "fastify";
 import registerLegacyApi from "./legacy";
 import registerV1Api from "./v1";
 

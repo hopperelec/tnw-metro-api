@@ -1,10 +1,7 @@
-import {config} from "dotenv";
 import * as mock from "./mock";
 import type * as Stub from "./stub";
 
 const PRIVATE_LIBRARY = "tnw-metro-api-private";
-
-config();
 
 async function loadPrivateLibrary(): Promise<typeof Stub> {
     let library: typeof Stub;
@@ -14,7 +11,7 @@ async function loadPrivateLibrary(): Promise<typeof Stub> {
     } catch (e) {
         // Only fall back if the library itself is missing, not if something it depends on is
         if (e?.code !== "ERR_MODULE_NOT_FOUND" || !e.message?.includes(`'${PRIVATE_LIBRARY}'`)) throw e;
-        if (process.env.REQUIRE_PRIVATE_LIBRARY === "true") {
+        if (Bun.env.REQUIRE_PRIVATE_LIBRARY === "true") {
             throw new Error(`${PRIVATE_LIBRARY} is not installed, but REQUIRE_PRIVATE_LIBRARY is true`, { cause: e });
         }
         console.warn(`${PRIVATE_LIBRARY} is not installed, so mock data will be used instead`);

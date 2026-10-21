@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import {
     NEW_DAY_HOUR,
     PASSIVE_REFRESH_INTERVAL,

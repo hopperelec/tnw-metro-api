@@ -1,4 +1,4 @@
-import {FastifyInstance} from "fastify";
+import type {FastifyInstance} from "fastify";
 import {PLATFORM_CODE_REGEX} from "../parsing/rti/times-api";
 
 /** The error response for due times endpoints when the due times couldn't be fetched */

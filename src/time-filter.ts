@@ -1,4 +1,4 @@
-import {HeartbeatWhereInput} from "../generated/prisma/models/Heartbeat";
+import type {HeartbeatWhereInput} from "../generated/prisma/models/Heartbeat";
 
 export default class TimeFilter {
     from?: Date;

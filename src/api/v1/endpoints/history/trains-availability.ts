@@ -1,7 +1,7 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import TimeFilter from "../../../../time-filter";
 import { convertContainers } from "../../../props";
-import {TrainDataAPI, TrainDataAPIs} from "../../../../types";
+import {type TrainDataAPI, TrainDataAPIs} from "../../../../types";
 import {DEFAULT_HISTORY_REQUEST_LIMIT, MAX_HISTORY_REQUEST_LIMIT} from "../../limits";
 import {getTrainsAvailability} from "../../../../history";
 

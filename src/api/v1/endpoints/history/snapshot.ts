@@ -1,8 +1,8 @@
-import { FastifyInstance } from 'fastify';
-import {getSnapshot, MatchStrategy} from "../../../../history";
+import type { FastifyInstance } from 'fastify';
+import {getSnapshot, type MatchStrategy} from "../../../../history";
 import {convertContainers} from "../../../props";
 import {parseLocations} from "../../train-filters";
-import {ParsedLocation} from "../../../../types";
+import type {ParsedLocation} from "../../../../types";
 
 export default function registerEndpoint(app: FastifyInstance) {
     app.get<{

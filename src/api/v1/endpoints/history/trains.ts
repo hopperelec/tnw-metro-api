@@ -1,6 +1,6 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import {DEFAULT_HISTORY_REQUEST_LIMIT, MAX_HISTORY_REQUEST_LIMIT} from "../../limits";
-import {ParsedLocation, TrainDataAPI, TrainDataAPIs} from "../../../../types";
+import {type ParsedLocation, type TrainDataAPI, TrainDataAPIs} from "../../../../types";
 import TimeFilter from "../../../../time-filter";
 import {getTrainsHistory} from "../../../../history";
 import {parseLocations} from "../../train-filters";

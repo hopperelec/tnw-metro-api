@@ -1,10 +1,9 @@
-import Fastify, {FastifyInstance} from "fastify";
-import {readFileSync} from "fs";
+import Fastify, {type FastifyInstance} from "fastify";
 import fastifyCors from "@fastify/cors";
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
-import {API_VERSIONS, ApiVersion, getVersion} from "./versions";
-import {getHost, getPort, getPublicUrl} from "./config";
+import {API_VERSIONS, type ApiVersion, getVersion} from "./versions";
+import {HOST, PORT, PUBLIC_URL} from "./config";
 
 const TITLE = 'Tyne and Wear Metro API proxy';
 
@@ -16,7 +15,7 @@ const DESCRIPTION = 'A proxy and aggregator for real-time data related to the Ty
 
 /** The URL of the docs, showing a specific version */
 function docsUrl(version: ApiVersion): string {
-    return `${getPublicUrl()}/?urls.primaryName=${encodeURIComponent(version.name)}`;
+    return `${PUBLIC_URL}/?urls.primaryName=${encodeURIComponent(version.name)}`;
 }
 
 /** Registers each version of the API in its own scope, so that each can have its own shared schemas and docs */
@@ -46,7 +45,7 @@ async function registerVersion(app: FastifyInstance, version: ApiVersion) {
                     description: version.description ? `${DESCRIPTION}\n\n${version.description}` : DESCRIPTION,
                     version: version.name,
                 },
-                servers: [{ url: getPublicUrl() }]
+                servers: [{ url: PUBLIC_URL }]
             },
             // Name shared schemas by their `$id` (e.g. `collated-train`) instead of `def-0`, `def-1`, etc.
             refResolver: {
@@ -80,7 +79,7 @@ async function registerDocs(app: FastifyInstance) {
                 // This adds a dropdown at the top right for choosing the version
                 urls: API_VERSIONS.map(version => ({
                     name: version.name,
-                    url: `${getPublicUrl()}${version.prefix}/openapi.json`
+                    url: `${PUBLIC_URL}${version.prefix}/openapi.json`
                 })),
                 // The docs show the newest version which isn't deprecated by default.
                 // Swagger UI supports this, but it's missing from `@fastify/swagger-ui`'s types.
@@ -101,13 +100,13 @@ export async function createApi(): Promise<FastifyInstance> {
                 discriminator: true
             },
         },
-        https: process.env.HTTPS_KEY_PATH && process.env.HTTPS_CERT_PATH ? {
-            key: readFileSync(process.env.HTTPS_KEY_PATH),
-            cert: readFileSync(process.env.HTTPS_CERT_PATH),
+        https: Bun.env.HTTPS_KEY_PATH && Bun.env.HTTPS_CERT_PATH ? {
+            key: await Bun.file(Bun.env.HTTPS_KEY_PATH).text(),
+            cert: await Bun.file(Bun.env.HTTPS_CERT_PATH).text(),
         } : undefined,
         // When behind a reverse proxy, this should be set to the proxy's address (e.g. "loopback"), so that client IPs
         //  are taken from the `X-Forwarded-For` entry it adds. Trusting every address would let clients spoof their IP.
-        trustProxy: process.env.TRUST_PROXY || false
+        trustProxy: Bun.env.TRUST_PROXY || false
     });
 
     // By default, browsers would only be allowed GET, HEAD and POST, but subscriptions also use DELETE
@@ -124,7 +123,7 @@ export async function createApi(): Promise<FastifyInstance> {
 /** Creates and starts the server */
 export async function startApi(): Promise<void> {
     const app = await createApi();
-    app.listen({ port: getPort(), host: getHost() }, (err, address) => {
+    app.listen({ port: PORT, host: HOST }, (err, address) => {
         if (err) {
             console.error(err);
             process.exit(1);

@@ -4,7 +4,7 @@ import {
     getExpectedTrainState, getTimetable
 } from "../../../parsing/timetable";
 import {sendWithProps} from "../../props";
-import {FastifyInstance} from "fastify";
+import type {FastifyInstance} from "fastify";
 import {getLastStatusChanges} from "../../../history";
 
 export default function registerEndpoint(app: FastifyInstance) {

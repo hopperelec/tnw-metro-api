@@ -1,5 +1,5 @@
 import {addHeartbeatWarning} from "../../history";
-import {Platform} from "../../types";
+import type {Platform} from "../../types";
 import {fetchGeoApi} from "../../private";
 
 export type TrainStatus = {

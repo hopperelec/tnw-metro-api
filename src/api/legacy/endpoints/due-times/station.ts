@@ -1,6 +1,6 @@
 import {getCollatedTrain, getLastHeartbeatTimes, restartHeartbeat} from "../../../../heartbeat";
 import {sendWithProps} from "../../../props";
-import {FastifyInstance} from "fastify";
+import type {FastifyInstance} from "fastify";
 import {getDueTimes, getStationDueTimes, normaliseStationCode} from "../../../../due-times";
 import {DUE_TIMES_NOT_AVAILABLE} from "../../../schemas";
 import {LOCATION_ABBREVIATIONS} from "../../../../constants";

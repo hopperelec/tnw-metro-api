@@ -1,7 +1,7 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { SseClient, STREAMS_DOCUMENTATION, SWAGGER_SSE_DISCLAIMER } from "../../../../sse";
 import {eventEmitter} from "../../../../../events";
-import {getDueTimes, DueTimes, PlatformDueTimes} from "../../../../../due-times";
+import {getDueTimes, type DueTimes, type PlatformDueTimes} from "../../../../../due-times";
 import { extractProps } from "../../../../props";
 import {getCollatedTrain, getLastHeartbeatTimes} from "../../../../../heartbeat";
 import {downgradeDueTime, downgradeHeartbeatTimes} from "../../../downgrade";

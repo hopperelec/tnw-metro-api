@@ -1,6 +1,6 @@
 import {LOCATION_ABBREVIATIONS, PASSENGER_STOPS} from "../../constants";
-import {LocationAbbreviation, Platform} from "../../types";
-import {DueTimes, PlatformDueTimes, TrainTime} from "../../due-times";
+import type {LocationAbbreviation, Platform} from "../../types";
+import type {DueTimes, PlatformDueTimes, TrainTime} from "../../due-times";
 import {addHeartbeatWarning} from "../../history";
 import {fetchTimesApi} from "../../private";
 

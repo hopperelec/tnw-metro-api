@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import TimeFilter from "../../../../time-filter";
 import {convertContainers} from "../../../props";
 import {ApiType} from "../../../../../generated/prisma/enums";

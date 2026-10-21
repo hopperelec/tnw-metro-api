@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import {registerCommonSchemas} from "../schemas";
 import {registerLegacySchemas} from "./schemas";
 import registerTrainsEndpoints from './endpoints/trains';

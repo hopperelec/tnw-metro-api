@@ -1,4 +1,4 @@
-import {CollatedTrain, ParsedLocation, Platform, TrainDataAPI, TrainFilters} from "../../types";
+import type {CollatedTrain, ParsedLocation, Platform, TrainDataAPI, TrainFilters} from "../../types";
 import {geoDataKey, timesDataKey} from "../../history";
 import {LOCATION_ABBREVIATIONS, MONUMENT_STATION_CODES} from "../../constants";
 import * as TimesAPI from "../../parsing/rti/times-api";

@@ -1,17 +1,16 @@
 import {ApiType, PrismaClient, Prisma} from "../generated/prisma/client";
 import {TimesAPI} from "./parsing/rti";
-import {TimesApiTrainDataSelect} from "../generated/prisma/models/TimesApiTrainData";
+import type {TimesApiTrainDataSelect} from "../generated/prisma/models/TimesApiTrainData";
 import {GeoAPI} from "./parsing/rti";
-import {GeoApiData} from "./parsing/rti/geo-api";
-import {GeoApiTrainDataSelect} from "../generated/prisma/models/GeoApiTrainData";
-import {InputJsonValue, JsonValue} from "@prisma/client/runtime/client";
-import {HeartbeatError, HeartbeatTimes, HeartbeatWarning} from "./heartbeat";
+import type {GeoApiData} from "./parsing/rti/geo-api";
+import type {GeoApiTrainDataSelect} from "../generated/prisma/models/GeoApiTrainData";
+import type {InputJsonValue, JsonValue} from "@prisma/client/runtime/client";
+import type {HeartbeatError, HeartbeatTimes, HeartbeatWarning} from "./heartbeat";
 import TimeFilter from "./time-filter";
-import {Platform, TrainDataAPI, TrainFilters} from "./types";
-import {HeartbeatSelect} from "../generated/prisma/models/Heartbeat";
+import type {Platform, TrainDataAPI, TrainFilters} from "./types";
+import type {HeartbeatSelect} from "../generated/prisma/models/Heartbeat";
 import {eventEmitter} from "./events";
 import {PrismaMariaDb} from "@prisma/adapter-mariadb";
-import {config} from "dotenv";
 
 // Run on every new database connection:
 // - The Prisma adapter sends and parses dates as UTC, but `TIMESTAMP`s are converted using the session's time zone,
@@ -24,12 +23,15 @@ const SESSION_INIT_SQL = "SET time_zone = '+00:00' /*M!110401 , SESSION optimize
 
 export function withSessionInit(databaseUrl: string): string {
     // `URLSearchParams` would encode spaces as `+`, which the driver doesn't decode
-    return `${databaseUrl}${databaseUrl.includes("?") ? "&" : "?"}initSql=${encodeURIComponent(SESSION_INIT_SQL)}`;
+    databaseUrl += `${databaseUrl.includes("?") ? "&" : "?"}initSql=${encodeURIComponent(SESSION_INIT_SQL)}`;
+    // The adapter sets this to 0 if it's missing, but doing so re-encodes the whole query using `URLSearchParams`.
+    // Setting it here instead (to the same value) means the adapter leaves the query as it is.
+    if (!/[?&]prepareCacheLength=/.test(databaseUrl)) databaseUrl += "&prepareCacheLength=0";
+    return databaseUrl;
 }
 
-config();
 export const prisma = new PrismaClient({
-    adapter: new PrismaMariaDb(withSessionInit(process.env.DATABASE_URL!))
+    adapter: new PrismaMariaDb(withSessionInit(Bun.env.DATABASE_URL!))
 });
 
 // --- Heartbeat Lifecycle ---
@@ -599,7 +601,8 @@ export async function getTrainsHistory(
             parsedStation: string | null;
             parsedPlatformNumber: number | null;
             lastEventTime: Date;
-            plannedDestinations: {
+            // Older versions of the adapter parse this, but newer ones type it as text, so it may still be JSON
+            plannedDestinations: string | {
                 name: string;
                 fromTime: string; // Prisma doesn't know that this is a Date here, so we have to parse it ourselves
                 fromPlatform: string;
@@ -656,6 +659,9 @@ export async function getTrainsHistory(
                     geoAPI: includeGeo ? [] : undefined,
                 });
             }
+            const plannedDestinations = typeof row.plannedDestinations === 'string'
+                ? JSON.parse(row.plannedDestinations) as Exclude<typeof row.plannedDestinations, string>
+                : row.plannedDestinations;
             trains.get(row.trn)!.timesAPI!.push({
                 startHeartbeat: {
                     startedAt: row.startHeartbeatStartedAt,
@@ -666,7 +672,7 @@ export async function getTrainsHistory(
                     endedAt: row.endHeartbeatEndedAt
                 } : null,
                 status: {
-                    plannedDestinations: TimesAPI.normalisePlannedDestinations(row.plannedDestinations.map(dest => ({
+                    plannedDestinations: TimesAPI.normalisePlannedDestinations(plannedDestinations.map(dest => ({
                         name: dest.name,
                         from: {
                             // Formatted like "2025-04-23 10:45:32.000", in the session's time zone, which is UTC

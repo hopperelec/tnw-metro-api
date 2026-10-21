@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import {getTrnsWithHistory} from "../../../../history";
 
 export default function registerEndpoint(app: FastifyInstance) {

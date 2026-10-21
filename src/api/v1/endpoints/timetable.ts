@@ -1,9 +1,9 @@
-import {FastifyInstance} from "fastify";
+import type {FastifyInstance} from "fastify";
 import {
     compareTimes,
     getCurrentTimetableAndTime,
     getTimetable,
-    TrainTimetableEntry
+    type TrainTimetableEntry
 } from "../../../parsing/timetable";
 import {getTimetableRefForDate} from "../../../private";
 import {MONUMENT_STATION_CODES} from "../../../constants";

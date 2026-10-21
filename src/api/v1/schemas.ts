@@ -1,4 +1,4 @@
-import {FastifyInstance} from "fastify";
+import type {FastifyInstance} from "fastify";
 
 /** Registers the shared schemas used by v1's endpoints */
 export function registerV1Schemas(app: FastifyInstance) {

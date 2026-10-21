@@ -1,4 +1,4 @@
-import {FastifyInstance} from "fastify";
+import type {FastifyInstance} from "fastify";
 
 /** Registers the shared schemas used by the legacy API's endpoints */
 export function registerLegacySchemas(app: FastifyInstance) {

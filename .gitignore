@@ -1,7 +1,6 @@
 /node_modules/
 /.idea/
 /.env
-/src/**/*.js
 /generated/
 *.db
 *.db-journal

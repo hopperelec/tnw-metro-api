@@ -1,4 +1,4 @@
-import {FastifyError, FastifyInstance, FastifyReply, FastifyRequest} from 'fastify';
+import type {FastifyError, FastifyInstance, FastifyReply, FastifyRequest} from 'fastify';
 import {STREAMS_DOCUMENTATION, SWAGGER_SSE_DISCLAIMER} from "../../sse";
 import {
     connectStream,
@@ -8,8 +8,8 @@ import {
     subscribe,
     SUBSCRIPTION_TOPICS,
     SubscriptionError,
-    SubscriptionRequest,
-    SubscriptionTopic,
+    type SubscriptionRequest,
+    type SubscriptionTopic,
     unsubscribe
 } from "../subscriptions";
 import {MAX_SUBSCRIPTIONS_PER_TOKEN} from "../limits";

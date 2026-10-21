@@ -1,14 +1,6 @@
-// These are functions rather than constants, since modules are evaluated before `.env` is loaded
+export const PORT = +Bun.env.PORT || 3000;
 
-export function getPort(): number {
-    return +process.env.PORT || 3000;
-}
-
-export function getHost(): string {
-    return process.env.HOST || 'localhost';
-}
+export const HOST = Bun.env.HOST || 'localhost';
 
 /** The URL which the API is publicly available at, without a trailing slash, for links in the docs and headers */
-export function getPublicUrl(): string {
-    return (process.env.PUBLIC_URL || `http://${getHost()}:${getPort()}`).replace(/\/$/, '');
-}
+export const PUBLIC_URL = (Bun.env.PUBLIC_URL || `http://${HOST}:${PORT}`).replace(/\/$/, '');

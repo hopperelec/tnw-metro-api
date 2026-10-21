@@ -1,4 +1,4 @@
-import {LineName, LocationAbbreviation} from "./types";
+import type {LineName, LocationAbbreviation} from "./types";
 
 export const NEW_DAY_HOUR = 3; // 3 AM
 

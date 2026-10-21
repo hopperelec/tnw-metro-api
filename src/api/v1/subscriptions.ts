@@ -3,7 +3,7 @@ import {ServerResponse} from "http";
 import {SseClient} from "../sse";
 import {eventEmitter} from "../../events";
 import {ApiType} from "../../../generated/prisma/enums";
-import {CollatedTrain, ParsedLocation, TrainDataAPI, TrainFilters} from "../../types";
+import type {CollatedTrain, ParsedLocation, TrainDataAPI, TrainFilters} from "../../types";
 import {LOCATION_ABBREVIATIONS} from "../../constants";
 import {
     MAX_SUBSCRIPTION_FILTER_VALUES,
@@ -13,11 +13,11 @@ import {
     MAX_SUBSCRIPTIONS_PER_TOKEN,
     SUBSCRIPTION_TOKEN_EXPIRY
 } from "./limits";
-import {DueTimes, getDueTimes, getStationDueTimes, normaliseStationCode, stationIncludes} from "../../due-times";
-import {getActiveTrains, getLastHeartbeatTimes, HeartbeatEnd, HeartbeatError, HeartbeatTimes, HeartbeatWarning} from "../../heartbeat";
+import {type DueTimes, getDueTimes, getStationDueTimes, normaliseStationCode, stationIncludes} from "../../due-times";
+import {getActiveTrains, getLastHeartbeatTimes, type HeartbeatEnd, type HeartbeatError, type HeartbeatTimes, type HeartbeatWarning} from "../../heartbeat";
 import {changedApis, filterApis, matchesStatusFilters, parseLocations, setCovers, trainFiltersCover} from "./train-filters";
 import {parsePlatformCode, PLATFORM_CODE_REGEX} from "../../parsing/rti/times-api";
-import {convertContainers, SourceContainer} from "../props";
+import {convertContainers, type SourceContainer} from "../props";
 
 export const SUBSCRIPTION_TOPICS = [
     'station-due-times',

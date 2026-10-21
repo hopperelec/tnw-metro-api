@@ -1,11 +1,11 @@
 import {loadGatewayData, invalidateGatewayData} from "./private";
 import {ACTIVE_REFRESH_MINIMUM_TIMEOUT, PASSIVE_REFRESH_INTERVAL} from "./constants";
-import {DueTimes, setDueTimes} from "./due-times";
+import {type DueTimes, setDueTimes} from "./due-times";
 import {eventEmitter} from "./events";
 import {addHeartbeatError, startHeartbeat, endHeartbeat, addApiData} from "./history";
-import {CollatedTrain} from "./types";
+import type {CollatedTrain} from "./types";
 import {ApiType} from "../generated/prisma/enums";
-import {JsonValue} from "@prisma/client/runtime/client";
+import type {JsonValue} from "@prisma/client/runtime/client";
 import {pollAndParseTimes} from "./parsing/rti/times-api";
 import {pollAndParseGeoAPI} from "./parsing/rti/geo-api";
 
@@ -170,7 +170,7 @@ function runHeartbeat(): Promise<void> {
     return heartbeatInProgress;
 }
 
-let heartbeatInterval: NodeJS.Timeout;
+let heartbeatInterval: Timer;
 export async function restartHeartbeat(): Promise<void> {
     if (heartbeatInProgress) return heartbeatInProgress;
     if (Date.now() - lastHeartbeatTimes.startedAt.getTime() < ACTIVE_REFRESH_MINIMUM_TIMEOUT) return;

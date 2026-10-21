@@ -11,7 +11,7 @@ export const SWAGGER_SSE_DISCLAIMER = 'Keep in mind that Swagger (the tool used 
 
 export class SseClient {
     private response: ServerResponse;
-    private keepAlive?: NodeJS.Timeout;
+    private keepAlive?: Timer;
 
     constructor(response: ServerResponse) {
         this.response = response;

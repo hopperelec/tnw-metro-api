@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "build": "tsc",
-    "prisma:generate": "prisma generate",
-    "prisma:create-migration": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy"
+    "start": "bun src/index.ts",
+    "typecheck": "tsc",
+    "prisma:generate": "bunx --bun prisma generate",
+    "prisma:create-migration": "bunx --bun prisma migrate dev",
+    "prisma:deploy": "bunx --bun prisma migrate deploy"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.1",
@@ -17,18 +17,17 @@
     "@prisma/adapter-mariadb": "^7.2.0",
     "@prisma/client": "^7.2.0",
     "csv-parser": "^3.2.0",
-    "dotenv": "^16.4.7",
     "fastify": "^5.6.2"
   },
   "optionalDependencies": {
-    "tnw-metro-api-private": "link:../tnw-metro-api-private"
+    "tnw-metro-api-private": "link:tnw-metro-api-private"
   },
   "devDependencies": {
-    "@types/node": "^25.0.3",
+    "@types/bun": "^1.4.3",
     "mariadb": "^3.5.3",
     "prisma": "^7.2.0",
-    "tslib": "^2.8.1",
-    "tsx": "^4.19.3",
+    "tsx": "^4.23.15",
     "typescript": "^5.8.2"
-  }
+  },
+  "trustedDependencies": []
 }

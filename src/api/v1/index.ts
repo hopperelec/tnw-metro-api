@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import {registerCommonSchemas} from "../schemas";
 import {registerV1Schemas} from "./schemas";
 import registerConstantsEndpoints from './endpoints/constants';
