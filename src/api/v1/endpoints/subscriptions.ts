@@ -14,7 +14,7 @@ import {
 } from "../subscriptions";
 import {MAX_SUBSCRIPTIONS_PER_TOKEN} from "../limits";
 import {TrainDataAPIs} from "../../../types";
-import {ApiType} from "../../../../generated/prisma/enums";
+import {ApiType} from "../../../db/schema";
 
 /** Sends subscription errors as plain text, like other endpoints' errors. Other errors are left to the default handler. */
 function errorHandler(error: FastifyError, _: FastifyRequest, res: FastifyReply) {

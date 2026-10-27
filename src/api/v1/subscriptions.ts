@@ -2,7 +2,7 @@ import {randomBytes} from "node:crypto";
 import {ServerResponse} from "http";
 import {SseClient} from "../sse";
 import {eventEmitter} from "../../events";
-import {ApiType} from "../../../generated/prisma/enums";
+import type {ApiType} from "../../db/schema";
 import type {CollatedTrain, ParsedLocation, TrainDataAPI, TrainFilters} from "../../types";
 import {LOCATION_ABBREVIATIONS} from "../../constants";
 import {

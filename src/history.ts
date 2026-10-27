@@ -1,56 +1,100 @@
-import {ApiType, PrismaClient, Prisma} from "../generated/prisma/client";
+import {and, asc, Column, desc, eq, gt, gte, inArray, is, isNull, lt, lte, max, or, type SQL, sql, type SQLWrapper, Subquery} from "drizzle-orm";
+import {alias, type MySqlColumn, type MySqlSelect, type SubqueryWithSelection, unionAll} from "drizzle-orm/mysql-core";
+import type {SelectResultField} from "drizzle-orm/query-builders/select.types";
+import {SelectionProxyHandler} from "drizzle-orm/selection-proxy";
+import {db} from "./db";
+import {
+    ApiType,
+    destination,
+    geoApiTrainData,
+    heartbeat,
+    heartbeatError,
+    heartbeatWarning,
+    parsedPlatform,
+    plannedDestination,
+    timesApiTrainData,
+    train,
+    trainEventType,
+    unparsedPlatform,
+} from "./db/schema";
 import {TimesAPI} from "./parsing/rti";
-import type {TimesApiTrainDataSelect} from "../generated/prisma/models/TimesApiTrainData";
 import {GeoAPI} from "./parsing/rti";
 import type {GeoApiData} from "./parsing/rti/geo-api";
-import type {GeoApiTrainDataSelect} from "../generated/prisma/models/GeoApiTrainData";
-import type {InputJsonValue, JsonValue} from "@prisma/client/runtime/client";
 import type {HeartbeatError, HeartbeatTimes, HeartbeatWarning} from "./heartbeat";
 import TimeFilter from "./time-filter";
-import type {Platform, TrainDataAPI, TrainFilters} from "./types";
-import type {HeartbeatSelect} from "../generated/prisma/models/Heartbeat";
+import type {JsonValue, Platform, TrainDataAPI, TrainFilters} from "./types";
 import {eventEmitter} from "./events";
-import {PrismaMariaDb} from "@prisma/adapter-mariadb";
 
-// Run on every new database connection:
-// - The Prisma adapter sends and parses dates as UTC, but `TIMESTAMP`s are converted using the session's time zone,
-//    so it must be UTC. Otherwise (e.g. on a server using BST) dates would be shifted, and times during the hour
-//    repeated when the clocks go back would collide.
-// - Allows the optimiser to satisfy `ORDER BY ... LIMIT` by reading an index in order and stopping early, rather than
-//    reading and sorting every matching row, which makes most limited history queries orders of magnitude faster.
-//    It is only available from MariaDB 11.4.1, so is in a version-specific comment which older versions ignore.
-const SESSION_INIT_SQL = "SET time_zone = '+00:00' /*M!110401 , SESSION optimizer_join_limit_pref_ratio = 100 */";
+// --- Query helpers ---
 
-export function withSessionInit(databaseUrl: string): string {
-    // `URLSearchParams` would encode spaces as `+`, which the driver doesn't decode
-    databaseUrl += `${databaseUrl.includes("?") ? "&" : "?"}initSql=${encodeURIComponent(SESSION_INIT_SQL)}`;
-    // The adapter sets this to 0 if it's missing, but doing so re-encodes the whole query using `URLSearchParams`.
-    // Setting it here instead (to the same value) means the adapter leaves the query as it is.
-    if (!/[?&]prepareCacheLength=/.test(databaseUrl)) databaseUrl += "&prepareCacheLength=0";
-    return databaseUrl;
+type TrainDataTable = typeof timesApiTrainData | typeof geoApiTrainData;
+
+type Order = 'asc' | 'desc';
+
+/** Orders by the column in the given direction */
+function ordered(column: Parameters<typeof asc>[0], order: Order): SQL {
+    return order === 'asc' ? asc(column) : desc(column);
 }
 
-export const prisma = new PrismaClient({
-    adapter: new PrismaMariaDb(withSessionInit(Bun.env.DATABASE_URL!))
-});
+/** Aliases each field as its key, so that the fields can be selected from a subquery (such as a union) */
+function aliasFields<T extends Record<string, Column | SQL>>(fields: T) {
+    return Object.fromEntries(Object.entries(fields).map(([key, field]) => [
+        key,
+        (is(field, Column) ? sql`${field}`.mapWith(field) : field).as(key)
+    ])) as { [K in keyof T]: SQL.Aliased<SelectResultField<T[K]>> };
+}
+
+/** A select query, which can be used as a subquery */
+interface AnySelect extends SQLWrapper {
+    _: { selectedFields: Record<string, unknown> };
+    as(alias: string): unknown
+}
+
+/** A select query which returns `TRow`s, and can be ordered and limited */
+interface OrderableSelect<TRow> extends AnySelect, PromiseLike<TRow[]> {
+    orderBy(...columns: SQL[]): { limit(limit: number): unknown };
+}
+
+/**
+ * Combines queries using `UNION ALL`, as a subquery.
+ * Unlike Drizzle's `unionAll`, this doesn't nest each query in another level of parentheses,
+ *  since MariaDB doesn't allow more than 63 levels of nesting, which a query per train would exceed.
+ * The queries' fields must be aliased (see `aliasFields`).
+ */
+function unionAllAs<TQuery extends AnySelect>(queries: TQuery[], alias: string): ReturnType<TQuery["as"]> {
+    // Built the same way as Drizzle's subqueries (see `MySqlSelect.as`), but with the union as the SQL.
+    // Drizzle already wraps each query in parentheses when it's embedded in SQL.
+    return new Proxy(
+        new Subquery(sql.join(queries, sql` UNION ALL `), queries[0]._.selectedFields, alias),
+        new SelectionProxyHandler({ alias, sqlAliasedBehavior: "alias", sqlBehavior: "error" })
+    ) as ReturnType<TQuery["as"]>;
+}
+
+/**
+ * Each train's latest data which started during the heartbeats matching the condition, as a subquery to join with.
+ * The `GROUP BY` allows MariaDB to find this using a single lookup per train in the `(trainId, startHeartbeatAt)` index.
+ */
+function latestDataPerTrain(data: TrainDataTable, startedDuring: SQL | undefined) {
+    return db.select({ trainId: data.trainId, startHeartbeatAt: max(data.startHeartbeatAt).as("startHeartbeatAt") })
+        .from(data)
+        .where(startedDuring)
+        .groupBy(data.trainId)
+        .as("latest");
+}
+
+function joinLatest(data: TrainDataTable, latest: ReturnType<typeof latestDataPerTrain>) {
+    return and(eq(latest.trainId, data.trainId), eq(latest.startHeartbeatAt, data.startHeartbeatAt));
+}
 
 // --- Heartbeat Lifecycle ---
 
 export async function startHeartbeat(startedAt: Date): Promise<void> {
-    await prisma.heartbeat.create({
-        data: { startedAt },
-        // Prisma forces us to select *something* for some reason, but we don't actually need the result
-        select: { startedAt: true }
-    });
+    await db.insert(heartbeat).values({ startedAt });
 }
 
 export async function endHeartbeat(startedAt: Date, endedAt: Date): Promise<void> {
-    await prisma.heartbeat.update({
-        where: { startedAt },
-        data: { endedAt },
-        // Prisma forces us to select *something* for some reason, but we don't actually need the result
-        select: { startedAt: true }
-    });
+    const [{ affectedRows }] = await db.update(heartbeat).set({ endedAt }).where(eq(heartbeat.startedAt, startedAt));
+    if (!affectedRows) throw new Error(`Heartbeat ${startedAt.toISOString()} doesn't exist`);
 }
 
 // --- Lookup tables and current data ---
@@ -76,29 +120,23 @@ export async function loadCurrentData(): Promise<{
     geo: Map<string, CurrentData>;
 }> {
     const [times, geo] = await Promise.all([
-        prisma.timesApiTrainData.findMany({
-            select: { id: true, train: { select: { trn: true } }, ...selectTimesTrainData },
-            where: { endHeartbeatAt: null }
-        }),
-        prisma.geoApiTrainData.findMany({
-            select: { id: true, train: { select: { trn: true } }, ...selectGeoTrainData },
-            where: { endHeartbeatAt: null }
-        }),
+        selectTimesData({ id: timesApiTrainData.id }).where(isNull(timesApiTrainData.endHeartbeatAt)),
+        selectGeoData({ id: geoApiTrainData.id }).where(isNull(geoApiTrainData.endHeartbeatAt)),
     ]);
     return {
-        times: new Map(times.map(row => [row.train.trn, { id: row.id, key: timesDataKey(formatTimesData(row)) }])),
-        geo: new Map(geo.map(row => [row.train.trn, { id: row.id, key: geoDataKey(formatGeoData(row)) }])),
+        times: new Map(times.map(row => [row.trn, { id: row.id, key: timesDataKey(formatTimesData(row)) }])),
+        geo: new Map(geo.map(row => [row.trn, { id: row.id, key: geoDataKey(formatGeoData(row)) }])),
     };
 }
 
 /** Loads the state needed to add new data, which must be done before the first heartbeat */
 export async function loadHistoryState(): Promise<void> {
     const [eventTypes, trains, parsedPlatforms, unparsedPlatforms, destinations, currentData] = await Promise.all([
-        prisma.trainEventType.findMany({ select: { id: true, name: true } }),
-        prisma.train.findMany({ select: { id: true, trn: true } }),
-        prisma.parsedPlatform.findMany({ select: { id: true, station: true, platformNumber: true } }),
-        prisma.unparsedPlatform.findMany({ select: { id: true, raw: true } }),
-        prisma.destination.findMany({ select: { id: true, name: true } }),
+        db.select().from(trainEventType),
+        db.select().from(train),
+        db.select().from(parsedPlatform),
+        db.select({ id: unparsedPlatform.id, raw: unparsedPlatform.raw }).from(unparsedPlatform),
+        db.select().from(destination),
         loadCurrentData(),
     ]);
     knownEventTypes.clear();
@@ -141,10 +179,10 @@ export async function loadHistoryState(): Promise<void> {
     );
 }
 
-async function lookupId(known: Map<string, number>, key: string, create: () => Promise<{ id: number }>): Promise<number> {
+async function lookupId(known: Map<string, number>, key: string, insert: () => Promise<{ id: number }[]>): Promise<number> {
     let id = known.get(key);
     if (id === undefined) {
-        id = (await create()).id;
+        [{ id }] = await insert();
         known.set(key, id);
     }
     return id;
@@ -152,42 +190,47 @@ async function lookupId(known: Map<string, number>, key: string, create: () => P
 
 function trainId(trn: string): Promise<number> {
     return lookupId(knownTrains, trn, () =>
-        prisma.train.create({ data: { trn }, select: { id: true } })
+        db.insert(train).values({ trn }).$returningId()
     );
 }
 
 function eventTypeId(name: string): Promise<number> {
     return lookupId(knownEventTypes, name, () =>
-        prisma.trainEventType.create({ data: { name }, select: { id: true } })
+        db.insert(trainEventType).values({ name }).$returningId()
     );
 }
 
 function destinationId(name: string): Promise<number> {
     return lookupId(knownDestinations, name, () =>
-        prisma.destination.create({ data: { name }, select: { id: true } })
+        db.insert(destination).values({ name }).$returningId()
     );
 }
 
 function parsedPlatformId({ station, platformNumber }: Platform): Promise<number> {
     return lookupId(knownParsedPlatforms, `${station}|${platformNumber}`, () =>
-        prisma.parsedPlatform.create({ data: { station, platformNumber }, select: { id: true } })
+        db.insert(parsedPlatform).values({ station, platformNumber }).$returningId()
     );
 }
 
 function unparsedPlatformId(raw: string, parsed: Platform | undefined): Promise<number> {
     return lookupId(knownUnparsedPlatforms, raw, async () =>
-        prisma.unparsedPlatform.create({
-            data: { raw, parsedPlatformId: parsed ? await parsedPlatformId(parsed) : null },
-            select: { id: true }
-        })
+        db.insert(unparsedPlatform).values({
+            raw,
+            parsedPlatformId: parsed ? await parsedPlatformId(parsed) : null
+        }).$returningId()
     );
 }
 
 /// --- Trains ---
 
-async function timesDataRow(trn: string, data: Omit<TimesAPI.ParsedTrain, 'nextPlatforms'>, heartbeatStartedAt: Date): Promise<Prisma.TimesApiTrainDataUncheckedCreateInput> {
+interface NewTimesData {
+    data: typeof timesApiTrainData.$inferInsert;
+    plannedDestinations: Omit<typeof plannedDestination.$inferInsert, 'statusId'>[];
+}
+
+async function timesDataRow(trn: string, data: Omit<TimesAPI.ParsedTrain, 'nextPlatforms'>, heartbeatStartedAt: Date): Promise<NewTimesData> {
     const { location } = data.lastEvent;
-    const plannedDestinations: Prisma.PlannedDestinationUncheckedCreateWithoutStatusInput[] = [];
+    const plannedDestinations: NewTimesData['plannedDestinations'] = [];
     for (const destination of data.plannedDestinations) {
         plannedDestinations.push({
             destinationId: await destinationId(destination.name),
@@ -196,19 +239,21 @@ async function timesDataRow(trn: string, data: Omit<TimesAPI.ParsedTrain, 'nextP
         });
     }
     return {
-        trainId: await trainId(trn),
-        startHeartbeatAt: heartbeatStartedAt,
-        lastEventLocationId: typeof location === 'string'
-            ? await unparsedPlatformId(location, undefined)
-            : await unparsedPlatformId(TimesAPI.formatLastEventLocation(location), location),
-        lastEventTypeId: await eventTypeId(data.lastEvent.type),
-        lastEventTime: data.lastEvent.time,
-        firstPlannedDestinationId: plannedDestinations[0]?.destinationId ?? null,
-        plannedDestinations: { create: plannedDestinations },
+        data: {
+            trainId: await trainId(trn),
+            startHeartbeatAt: heartbeatStartedAt,
+            lastEventLocationId: typeof location === 'string'
+                ? await unparsedPlatformId(location, undefined)
+                : await unparsedPlatformId(TimesAPI.formatLastEventLocation(location), location),
+            lastEventTypeId: await eventTypeId(data.lastEvent.type),
+            lastEventTime: data.lastEvent.time,
+            firstPlannedDestinationId: plannedDestinations[0]?.destinationId ?? null,
+        },
+        plannedDestinations,
     };
 }
 
-async function geoDataRow(trn: string, data: GeoAPI.TrainStatus, heartbeatStartedAt: Date): Promise<Prisma.GeoApiTrainDataUncheckedCreateInput> {
+async function geoDataRow(trn: string, data: GeoAPI.TrainStatus, heartbeatStartedAt: Date): Promise<typeof geoApiTrainData.$inferInsert> {
     const { lastSeen } = data;
     const row = {
         trainId: await trainId(trn),
@@ -269,41 +314,45 @@ export async function addApiData(
     const timesChanges = findChanges(currentTimesData, timesApiData?.trains, timesDataKey);
     const geoChanges = findChanges(currentGeoData, geoApiData, geoDataKey);
 
-    const timesRows: Prisma.TimesApiTrainDataUncheckedCreateInput[] = [];
+    const timesRows: NewTimesData[] = [];
     for (const { trn, data } of timesChanges.added) {
         timesRows.push(await timesDataRow(trn, data, heartbeatStartedAt));
     }
-    const geoRows: Prisma.GeoApiTrainDataUncheckedCreateInput[] = [];
+    const geoRows: typeof geoApiTrainData.$inferInsert[] = [];
     for (const { trn, data } of geoChanges.added) {
         geoRows.push(await geoDataRow(trn, data, heartbeatStartedAt));
     }
 
-    const [timesIds, geoIds] = await prisma.$transaction(async prisma => {
+    const [timesIds, geoIds] = await db.transaction(async tx => {
         if (timesChanges.ended.length) {
-            await prisma.timesApiTrainData.updateMany({
-                where: { id: { in: timesChanges.ended.map(trn => currentTimesData.get(trn)!.id) } },
-                data: { endHeartbeatAt: heartbeatStartedAt }
-            });
+            await tx.update(timesApiTrainData)
+                .set({ endHeartbeatAt: heartbeatStartedAt })
+                .where(inArray(timesApiTrainData.id, timesChanges.ended.map(trn => currentTimesData.get(trn)!.id)));
         }
         if (geoChanges.ended.length) {
-            await prisma.geoApiTrainData.updateMany({
-                where: { id: { in: geoChanges.ended.map(trn => currentGeoData.get(trn)!.id) } },
-                data: { endHeartbeatAt: heartbeatStartedAt }
-            });
+            await tx.update(geoApiTrainData)
+                .set({ endHeartbeatAt: heartbeatStartedAt })
+                .where(inArray(geoApiTrainData.id, geoChanges.ended.map(trn => currentGeoData.get(trn)!.id)));
         }
-        // Only a few trains' data changes each heartbeat, so each is simply created separately
+
+        // Only a few trains' data changes each heartbeat, so each is simply inserted separately
         const timesIds: number[] = [];
-        for (const data of timesRows) {
-            timesIds.push((await prisma.timesApiTrainData.create({ data, select: { id: true } })).id);
+        const plannedDestinations: typeof plannedDestination.$inferInsert[] = [];
+        for (const row of timesRows) {
+            const [{ id }] = await tx.insert(timesApiTrainData).values(row.data).$returningId();
+            timesIds.push(id);
+            plannedDestinations.push(...row.plannedDestinations.map(destination => ({ ...destination, statusId: id })));
         }
+        if (plannedDestinations.length) {
+            await tx.insert(plannedDestination).values(plannedDestinations);
+        }
+
         const geoIds: number[] = [];
-        for (const data of geoRows) {
-            geoIds.push((await prisma.geoApiTrainData.create({ data, select: { id: true } })).id);
+        for (const row of geoRows) {
+            const [{ id }] = await tx.insert(geoApiTrainData).values(row).$returningId();
+            geoIds.push(id);
         }
         return [timesIds, geoIds];
-    }, {
-        // Usually only a few rows are created, but after an API failure, every train's data is created again
-        timeout: 60_000
     });
     applyChanges(currentTimesData, timesChanges, timesIds);
     applyChanges(currentGeoData, geoChanges, geoIds);
@@ -311,7 +360,7 @@ export async function addApiData(
 
 /** The TRNs of all trains which have any history, which are all trains since they're only added when data is */
 export async function getTrnsWithHistory(): Promise<string[]> {
-    const trains = await prisma.train.findMany({ select: { trn: true }, orderBy: { trn: 'asc' } });
+    const trains = await db.select({ trn: train.trn }).from(train).orderBy(asc(train.trn));
     return trains.map(train => train.trn);
 }
 
@@ -321,37 +370,39 @@ export async function getTrnsWithHistory(): Promise<string[]> {
  */
 export async function getLastStatusChanges(trns: string[], at?: Date): Promise<Map<string, HeartbeatTimes>> {
     if (!trns.length) return new Map();
+
     // A train's data for an API never overlaps, so its latest data (see `getDataIdsDuringHeartbeat`) is the last to have
     //  started or ended. Its end only counts if it had ended by `at`.
-    const changedAt = at
-        ? Prisma.sql`IF(d.endHeartbeatAt <= ${at}, d.endHeartbeatAt, d.startHeartbeatAt)`
-        : Prisma.sql`COALESCE(d.endHeartbeatAt, d.startHeartbeatAt)`;
-    const startedBy = at ? Prisma.sql`WHERE startHeartbeatAt <= ${at}` : Prisma.empty;
-    const rows = await prisma.$queryRaw<{ trn: string; startedAt: Date; endedAt: Date | null }[]>`
-        SELECT t.trn, h.startedAt, h.endedAt
-        FROM (
-            SELECT trainId, MAX(changedAt) AS changedAt
-            FROM (
-                SELECT d.trainId, ${changedAt} AS changedAt
-                FROM TimesApiTrainData d
-                JOIN (
-                    SELECT trainId, MAX(startHeartbeatAt) AS startHeartbeatAt FROM TimesApiTrainData ${startedBy}
-                    GROUP BY trainId
-                ) latest USING (trainId, startHeartbeatAt)
-                UNION ALL
-                SELECT d.trainId, ${changedAt}
-                FROM GeoApiTrainData d
-                JOIN (
-                    SELECT trainId, MAX(startHeartbeatAt) AS startHeartbeatAt FROM GeoApiTrainData ${startedBy}
-                    GROUP BY trainId
-                ) latest USING (trainId, startHeartbeatAt)
-            ) changes
-            GROUP BY trainId
-        ) lastChange
-        JOIN Train t ON t.id = lastChange.trainId
-        JOIN Heartbeat h ON h.startedAt = lastChange.changedAt
-        WHERE t.trn IN (${Prisma.join(trns)})
-    `;
+    function changes(data: TrainDataTable) {
+        const latest = latestDataPerTrain(data, at ? lte(data.startHeartbeatAt, at) : undefined);
+        const changedAt = at
+            ? sql`IF(${lte(data.endHeartbeatAt, at)}, ${data.endHeartbeatAt}, ${data.startHeartbeatAt})`
+            : sql`COALESCE(${data.endHeartbeatAt}, ${data.startHeartbeatAt})`;
+        return db.select({
+            trainId: data.trainId,
+            changedAt: changedAt.mapWith(data.startHeartbeatAt).as("changedAt")
+        }).from(data)
+            .innerJoin(latest, joinLatest(data, latest));
+    }
+
+    const allChanges = unionAll(changes(timesApiTrainData), changes(geoApiTrainData)).as("changes");
+
+    const lastChange = db.select({
+        trainId: allChanges.trainId,
+        changedAt: max(allChanges.changedAt).as("changedAt")
+    }).from(allChanges)
+        .groupBy(allChanges.trainId)
+        .as("lastChange");
+
+    const rows = await db.select({
+        trn: train.trn,
+        startedAt: heartbeat.startedAt,
+        endedAt: heartbeat.endedAt
+    }).from(lastChange)
+        .innerJoin(train, eq(train.id, lastChange.trainId))
+        .innerJoin(heartbeat, eq(heartbeat.startedAt, lastChange.changedAt))
+        .where(inArray(train.trn, trns));
+
     return new Map(rows.map(row => [row.trn, { startedAt: row.startedAt, endedAt: row.endedAt }]));
 }
 
@@ -360,7 +411,7 @@ function truncate(
     limit: number | undefined,
     limitPerTrn: number | undefined,
     entries: Iterable<{ trn: string; start: Date }>,
-    order: 'asc' | 'desc'
+    order: Order
 ): {
     filterFn: (time: Date) => boolean;
     truncationTime: Date;
@@ -414,6 +465,65 @@ type TrainHistoryEntry<Status> = {
     status: Status;
 };
 
+const dataStartHeartbeat = alias(heartbeat, "startHeartbeat");
+const dataEndHeartbeat = alias(heartbeat, "endHeartbeat");
+
+/** The heartbeats during which data started and ended, which must be joined using `joinHeartbeats` */
+const heartbeatFields = aliasFields({
+    startHeartbeatStartedAt: dataStartHeartbeat.startedAt,
+    startHeartbeatEndedAt: dataStartHeartbeat.endedAt,
+    endHeartbeatStartedAt: dataEndHeartbeat.startedAt,
+    endHeartbeatEndedAt: dataEndHeartbeat.endedAt,
+});
+
+function joinHeartbeats<TQuery extends MySqlSelect>(query: TQuery, data: TrainDataTable) {
+    return query
+        .innerJoin(dataStartHeartbeat, eq(dataStartHeartbeat.startedAt, data.startHeartbeatAt))
+        .leftJoin(dataEndHeartbeat, eq(dataEndHeartbeat.startedAt, data.endHeartbeatAt));
+}
+
+/** The IDs of the data to select, as selected by a subquery */
+type SelectedIds = SubqueryWithSelection<{ id: SQL.Aliased<number> }, "selectedIds">;
+
+/** Restricts the query to the data with the selected IDs, if there are any */
+function joinSelectedIds<TQuery extends MySqlSelect>(query: TQuery, data: TrainDataTable, selectedIds?: SelectedIds) {
+    // The query's fields are selected explicitly, so joining another table doesn't change its results
+    return selectedIds ? query.innerJoin(selectedIds, eq(selectedIds.id, data.id)) as unknown as TQuery : query;
+}
+
+function formatHeartbeats(row: SelectResultField<typeof heartbeatFields>): Omit<TrainHistoryEntry<unknown>, 'status'> {
+    return {
+        startHeartbeat: {
+            startedAt: row.startHeartbeatStartedAt,
+            endedAt: row.startHeartbeatEndedAt
+        },
+        endHeartbeat: row.endHeartbeatStartedAt ? {
+            startedAt: row.endHeartbeatStartedAt,
+            endedAt: row.endHeartbeatEndedAt
+        } : null,
+    };
+}
+
+/** Filters which apply to both APIs' data. These require the tables joined by `selectTimesData`/`selectGeoData`. */
+function trainDataFilters(
+    data: TrainDataTable,
+    { trns, eventTypes, locations }: Omit<TrainFilters, 'apis' | 'destinations'>,
+    timeFilter?: TimeFilter
+): (SQL | undefined)[] {
+    return [
+        trns?.size ? inArray(train.trn, Array.from(trns)) : undefined,
+        timeFilter?.from ? gte(data.startHeartbeatAt, timeFilter.from) : undefined,
+        timeFilter?.to ? lte(data.startHeartbeatAt, timeFilter.to) : undefined,
+        eventTypes?.size ? inArray(trainEventType.name, Array.from(eventTypes)) : undefined,
+        locations?.length ? or(...locations.map(loc =>
+            and(
+                eq(parsedPlatform.station, loc.station),
+                loc.platformNumber !== undefined ? eq(parsedPlatform.platformNumber, loc.platformNumber) : undefined
+            )
+        )) : undefined,
+    ];
+}
+
 export async function getTrainsHistory(
     { trns, apis, eventTypes, locations, destinations }: TrainFilters,
     timeFilter?: TimeFilter,
@@ -429,221 +539,89 @@ export async function getTrainsHistory(
     const includeTimes = !apis?.size || apis.has('TIMES');
     const includeGeo = !apis?.size || apis.has('GEO');
     const hasAnyLimit = !!(limitPerTrn || limit);
-    const order = timeFilter?.from ? 'asc' : 'desc';
+    const order: Order = timeFilter?.from ? 'asc' : 'desc';
 
     // --- Fetch potentially matching data rows ---
 
-    const baseSelect = Prisma.sql`
-    t.trn AS trn,
-    h1.startedAt AS startHeartbeatStartedAt,
-    h1.endedAt AS startHeartbeatEndedAt,
-    h2.startedAt AS endHeartbeatStartedAt,
-    h2.endedAt AS endHeartbeatEndedAt
-    `;
-
-    const orderClause = Prisma.sql`ORDER BY data.startHeartbeatAt ${Prisma.raw(order)}`;
-
-    // Note that 1 is added to detect truncation
-    const globalLimitClause = limit
-        ? Prisma.sql`
-        ${orderClause}
-        LIMIT ${limit + 1}
-        `
-        : Prisma.empty;
-
-    // When limiting per train, each train is queried separately (in one statement) so that the
+    // When limiting per train, each train's rows are found separately (in one statement) so that the
     //  `(trainId, startHeartbeatAt)` index can be used to only read the first rows for each train.
     const perTrainIds = limitPerTrn
-        ? (await prisma.train.findMany({
-            select: { id: true },
-            where: trns?.size ? { trn: { in: Array.from(trns) } } : undefined
-        })).map(train => train.id)
+        ? (await db.select({ id: train.id })
+            .from(train)
+            .where(trns?.size ? inArray(train.trn, Array.from(trns)) : undefined)
+        ).map(train => train.id)
         : [];
     // A train's rows beyond the first `limit + 1` would be beyond the first `limit + 1` overall too, so can't be needed
     const perTrainLimit = Math.min(limitPerTrn, limit ?? Infinity);
 
-    function runApiQuery(
-        select: Prisma.Sql,
-        from: Prisma.Sql,
-        whereClauses: Prisma.Sql[]
-    ): Promise<any> {
-        function buildQuery(extraWhereClauses: Prisma.Sql[], limitClause: Prisma.Sql) {
-            const allWhereClauses = [...whereClauses, ...extraWhereClauses];
-            const whereClause = allWhereClauses.length ? Prisma.sql`WHERE ${Prisma.join(allWhereClauses, ' AND ')}` : Prisma.empty;
-            return Prisma.sql`
-            SELECT
-                ${select},
-                ${baseSelect}
-            FROM ${from}
-            ${whereClause}
-            ${limitClause}
-            `;
-        }
-
+    // Note that 1 is added to limits to detect truncation
+    async function runApiQuery<TRow>(
+        data: TrainDataTable,
+        filter: SQL | undefined,
+        selectData: (selectedIds?: SelectedIds) => OrderableSelect<TRow> & { where(filter: SQL | undefined): OrderableSelect<TRow> },
+        selectIds: () => OrderableSelect<{ id: number }> & { where(filter: SQL | undefined): OrderableSelect<{ id: number }> },
+    ): Promise<TRow[]> {
+        const limited = <TQuery extends OrderableSelect<unknown>>(query: TQuery, n: number) =>
+            query.orderBy(ordered(data.startHeartbeatAt, order)).limit(n) as TQuery;
         if (!limitPerTrn) {
-            return prisma.$queryRaw(buildQuery([], globalLimitClause));
+            const query = selectData().where(filter);
+            return limit ? limited(query, limit + 1) : query;
         }
         if (!perTrainIds.length) {
-            return Promise.resolve([]);
+            return [];
         }
-        const perTrainQueries = perTrainIds.map(trainId => Prisma.sql`(${buildQuery(
-            [Prisma.sql`data.trainId = ${trainId}`],
-            Prisma.sql`${orderClause} LIMIT ${perTrainLimit + 1}`
-        )})`);
-        return prisma.$queryRaw(Prisma.sql`
-            SELECT * FROM (${Prisma.join(perTrainQueries, ' UNION ALL ')}) AS perTrain
-            ${limit ? Prisma.sql`ORDER BY startHeartbeatStartedAt ${Prisma.raw(order)} LIMIT ${limit + 1}` : Prisma.empty}
-        `);
+        // Only each train's first rows' IDs are found separately, and the rest of the data is then selected for just
+        //  those rows. Selecting all the data for each train separately would make the statement much larger, which
+        //  takes MariaDB much longer to plan.
+        const selectedIds = unionAllAs(perTrainIds.map(trainId =>
+            limited(selectIds().where(and(filter, eq(data.trainId, trainId))), perTrainLimit + 1)
+        ), "selectedIds") as SelectedIds;
+        const query = selectData(selectedIds);
+        // Without an overall limit, trains are ordered by TRN, as they were when each train's data was selected
+        //  separately (in the order the TRN index returned them)
+        return limit
+            ? limited(query, limit + 1)
+            : query.orderBy(asc(train.trn), ordered(data.startHeartbeatAt, order)) as unknown as Promise<TRow[]>;
     }
 
-    const whereClauses: Prisma.Sql[] = [];
-    if (trns?.size) {
-        whereClauses.push(Prisma.sql`t.trn IN (${Prisma.join(Array.from(trns))})`);
-    }
-    if (timeFilter?.from) {
-        whereClauses.push(Prisma.sql`data.startHeartbeatAt >= ${timeFilter.from}`);
-    }
-    if (timeFilter?.to) {
-        whereClauses.push(Prisma.sql`data.startHeartbeatAt <= ${timeFilter.to}`);
-    }
-    if (eventTypes?.size) {
-        whereClauses.push(Prisma.sql`et.name IN (${Prisma.join(Array.from(eventTypes))})`);
-    }
-    if (locations?.length) {
-        whereClauses.push(Prisma.sql`(${Prisma.join(locations.map(loc => {
-            if (loc.platformNumber === undefined) {
-                return Prisma.sql`p2.station = ${loc.station}`;
-            }
-            return Prisma.sql`(p2.station = ${loc.station} AND p2.platformNumber = ${loc.platformNumber})`;
-        }), ' OR ')})`);
-    }
-    const timesWhereClauses = [...whereClauses];
-    const geoWhereClauses = [...whereClauses];
-    if (destinations?.size) {
-        timesWhereClauses.push(Prisma.sql`
-        data.firstPlannedDestinationId IN (
-            SELECT id FROM Destination WHERE name IN (${Prisma.join(Array.from(destinations))})
-        )
-        `);
-        geoWhereClauses.push(Prisma.sql`d.name IN (${Prisma.join(Array.from(destinations))})`);
-    }
-
-    const promises: Promise<any>[] = [];
-    if (includeTimes) {
-        promises.push(runApiQuery(
-            Prisma.sql`
-            et.name AS lastEventType,
-            p1.raw AS rawLastEventLocation,
-            p2.station AS parsedStation,
-            p2.platformNumber AS parsedPlatformNumber,
-            data.lastEventTime AS lastEventTime,
-            (
-                SELECT JSON_ARRAYAGG(
-                    JSON_OBJECT(
-                        'name', d.name,
-                        'fromTime', pd.fromTime,
-                        'fromPlatform', p3.raw
-                    )
-                )
-                FROM PlannedDestination pd
-                JOIN Destination d ON pd.destinationId = d.id
-                JOIN UnparsedPlatform p3 ON pd.fromPlatformId = p3.id
-                WHERE pd.statusId = data.id
-            ) AS plannedDestinations
-            `,
-            Prisma.sql`
-            TimesApiTrainData data
-            JOIN Train t ON data.trainId = t.id
-            JOIN Heartbeat h1 ON data.startHeartbeatAt = h1.startedAt
-            LEFT JOIN Heartbeat h2 ON data.endHeartbeatAt = h2.startedAt
-            JOIN TrainEventType et ON data.lastEventTypeId = et.id
-            JOIN UnparsedPlatform p1 ON data.lastEventLocationId = p1.id
-            LEFT JOIN ParsedPlatform p2 ON p1.parsedPlatformId = p2.id
-            `,
-            timesWhereClauses,
-        ));
-    } else {
-        promises.push(Promise.resolve());
-    }
-
-    if (includeGeo) {
-        promises.push(runApiQuery(
-            Prisma.sql`
-            data.rawLastSeen AS rawLastSeen,
-            et.name AS lastEventType,
-            p2.station AS parsedStation,
-            p2.platformNumber AS parsedPlatformNumber,
-            data.lastEventTime AS lastEventTime,
-            d.name AS destination
-            `,
-            Prisma.sql`
-            GeoApiTrainData data
-            JOIN Train t ON data.trainId = t.id
-            JOIN Heartbeat h1 ON data.startHeartbeatAt = h1.startedAt
-            LEFT JOIN Heartbeat h2 ON data.endHeartbeatAt = h2.startedAt
-            LEFT JOIN TrainEventType et ON data.lastEventTypeId = et.id
-            LEFT JOIN ParsedPlatform p2 ON data.lastEventPlatformId = p2.id
-            JOIN Destination d ON data.destinationId = d.id
-            `,
-            geoWhereClauses,
-        ));
-    }
-
-    let [timesResults, geoResults] = await Promise.all(promises) as [
-        {
-            trn: string;
-            startHeartbeatStartedAt: Date;
-            startHeartbeatEndedAt: Date | null;
-            endHeartbeatStartedAt: Date | null;
-            endHeartbeatEndedAt: Date | null;
-            lastEventType: string;
-            rawLastEventLocation: string;
-            parsedStation: string | null;
-            parsedPlatformNumber: number | null;
-            lastEventTime: Date;
-            // Older versions of the adapter parse this, but newer ones type it as text, so it may still be JSON
-            plannedDestinations: string | {
-                name: string;
-                fromTime: string; // Prisma doesn't know that this is a Date here, so we have to parse it ourselves
-                fromPlatform: string;
-            }[]
-        }[] | void,
-        {
-            trn: string;
-            startHeartbeatStartedAt: Date;
-            startHeartbeatEndedAt: Date | null;
-            endHeartbeatStartedAt: Date | null;
-            endHeartbeatEndedAt: Date | null;
-            rawLastSeen: string | null;
-            lastEventType: string | null;
-            parsedStation: string | null;
-            parsedPlatformNumber: number | null;
-            lastEventTime: Date | null;
-            destination: string;
-        }[] | void
-    ];
+    const [timesResults, geoResults] = await Promise.all([
+        includeTimes
+            ? runApiQuery(
+                timesApiTrainData,
+                and(
+                    ...trainDataFilters(timesApiTrainData, { trns, eventTypes, locations }, timeFilter),
+                    destinations?.size ? timesDestinationFilter(destinations) : undefined,
+                ),
+                selectedIds => joinSelectedIds(joinHeartbeats(selectTimesData(heartbeatFields), timesApiTrainData), timesApiTrainData, selectedIds),
+                () => joinTimesTables(db.select(aliasFields({ id: timesApiTrainData.id })).from(timesApiTrainData).$dynamic()),
+            )
+            : undefined,
+        includeGeo
+            ? runApiQuery(
+                geoApiTrainData,
+                and(
+                    ...trainDataFilters(geoApiTrainData, { trns, eventTypes, locations }, timeFilter),
+                    destinations?.size ? inArray(destination.name, Array.from(destinations)) : undefined,
+                ),
+                selectedIds => joinSelectedIds(joinHeartbeats(selectGeoData(heartbeatFields), geoApiTrainData), geoApiTrainData, selectedIds),
+                () => joinGeoTables(db.select(aliasFields({ id: geoApiTrainData.id })).from(geoApiTrainData).$dynamic()),
+            )
+            : undefined,
+    ]);
 
     // --- Truncate results if needed ---
 
-    let truncationTime: Date | null = null;
+    let truncation: ReturnType<typeof truncate> = null;
     if (hasAnyLimit) {
-        const truncation = truncate(
+        truncation = truncate(
             limit,
             limitPerTrn,
-            [...(timesResults || []), ...(geoResults || [])]
+            [...(timesResults ?? []), ...(geoResults ?? [])]
                 .map(row => ({ trn: row.trn, start: row.startHeartbeatStartedAt })),
             order
         );
-        if (truncation) {
-            truncationTime = truncation.truncationTime;
-            if (timesResults) {
-                timesResults = timesResults.filter(row => truncation.filterFn(row.startHeartbeatStartedAt));
-            }
-            if (geoResults) {
-                geoResults = geoResults.filter(row => truncation.filterFn(row.startHeartbeatStartedAt));
-            }
-        }
     }
+    const isIncluded = (row: { startHeartbeatStartedAt: Date }) => !truncation || truncation.filterFn(row.startHeartbeatStartedAt);
 
     // --- Format results ---
 
@@ -651,82 +629,28 @@ export async function getTrainsHistory(
         timesAPI?: TimesTrainHistoryEntry[],
         geoAPI?: GeoTrainHistoryEntry[],
     }>();
-    if (timesResults) {
-        for (const row of timesResults) {
-            if (!trains.has(row.trn)) {
-                trains.set(row.trn, {
-                    timesAPI: [],
-                    geoAPI: includeGeo ? [] : undefined,
-                });
-            }
-            const plannedDestinations = typeof row.plannedDestinations === 'string'
-                ? JSON.parse(row.plannedDestinations) as Exclude<typeof row.plannedDestinations, string>
-                : row.plannedDestinations;
-            trains.get(row.trn)!.timesAPI!.push({
-                startHeartbeat: {
-                    startedAt: row.startHeartbeatStartedAt,
-                    endedAt: row.startHeartbeatEndedAt
-                },
-                endHeartbeat: row.endHeartbeatStartedAt ? {
-                    startedAt: row.endHeartbeatStartedAt,
-                    endedAt: row.endHeartbeatEndedAt
-                } : null,
-                status: {
-                    plannedDestinations: TimesAPI.normalisePlannedDestinations(plannedDestinations.map(dest => ({
-                        name: dest.name,
-                        from: {
-                            // Formatted like "2025-04-23 10:45:32.000", in the session's time zone, which is UTC
-                            time: new Date(dest.fromTime.replace(' ', 'T') + 'Z'),
-                            platformCode: dest.fromPlatform
-                        }
-                    }))),
-                    lastEvent: {
-                        location: row.parsedStation !== null ? {
-                            station: row.parsedStation,
-                            platformNumber: row.parsedPlatformNumber!
-                        } : row.rawLastEventLocation,
-                        type: row.lastEventType,
-                        time: row.lastEventTime
-                    }
-                }
+    for (const row of (timesResults ?? []).filter(isIncluded)) {
+        if (!trains.has(row.trn)) {
+            trains.set(row.trn, {
+                timesAPI: [],
+                geoAPI: includeGeo ? [] : undefined,
             });
         }
+        trains.get(row.trn)!.timesAPI!.push({ ...formatHeartbeats(row), status: formatTimesData(row) });
     }
-    if (geoResults) {
-        for (const row of geoResults) {
-            if (!trains.has(row.trn)) {
-                trains.set(row.trn, {
-                    timesAPI: includeTimes ? [] : undefined,
-                    geoAPI: [],
-                });
-            }
-            if (!trains.get(row.trn)!.geoAPI) {
-                trains.get(row.trn)!.geoAPI = [];
-            }
-            trains.get(row.trn)!.geoAPI!.push({
-                startHeartbeat: {
-                    startedAt: row.startHeartbeatStartedAt,
-                    endedAt: row.startHeartbeatEndedAt
-                },
-                endHeartbeat: row.endHeartbeatStartedAt ? {
-                    startedAt: row.endHeartbeatStartedAt,
-                    endedAt: row.endHeartbeatEndedAt
-                } : null,
-                status: {
-                    destination: row.destination,
-                    lastSeen: row.parsedStation !== null ? {
-                        station: row.parsedStation,
-                        platformNumber: row.parsedPlatformNumber!,
-                        type: row.lastEventType!,
-                        time: row.lastEventTime!
-                    } : row.rawLastSeen
-                }
+    for (const row of (geoResults ?? []).filter(isIncluded)) {
+        if (!trains.has(row.trn)) {
+            trains.set(row.trn, {
+                timesAPI: includeTimes ? [] : undefined,
+                geoAPI: [],
             });
         }
+        trains.get(row.trn)!.geoAPI ??= [];
+        trains.get(row.trn)!.geoAPI!.push({ ...formatHeartbeats(row), status: formatGeoData(row) });
     }
     return {
         trains,
-        truncatedTo: truncationTime
+        truncatedTo: truncation?.truncationTime ?? null
     }
 }
 
@@ -740,38 +664,40 @@ export async function getTrainsHistory(
  *  data ended.
  */
 async function findAvailabilityRanges(
-    table: "TimesApiTrainData" | "GeoApiTrainData",
+    table: TrainDataTable,
     trainIds: number[] | null, // null for all trains
     allTrainIds: number[],
-    order: 'asc' | 'desc',
+    order: Order,
     timeFilter: TimeFilter | undefined,
     limit: number | undefined,
     limitPerTrn: number | undefined,
 ): Promise<{ trainId: number; start: Date; end: Date | null }[]> {
     if (trainIds && !trainIds.length) return [];
-    const T = Prisma.raw(table);
     const from = timeFilter?.from;
     const to = timeFilter?.to;
-    const trainClause = trainIds ? Prisma.sql`AND d.trainId IN (${Prisma.join(trainIds)})` : Prisma.empty;
-    const toClause = to ? Prisma.sql`AND d.startHeartbeatAt <= ${to}` : Prisma.empty;
+    const trainFilter = trainIds ? inArray(table.trainId, trainIds) : undefined;
+    const startedByTo = to ? lte(table.startHeartbeatAt, to) : undefined;
+    const rangeFields = aliasFields({ trainId: table.trainId, start: table.startHeartbeatAt });
 
     // --- Find where ranges start ---
 
     // Data starts a range if no data for the same train ended when it started.
     // Written as an anti-join rather than `NOT EXISTS`, since MariaDB would otherwise materialise the whole subquery
     //  instead of doing an index lookup per row.
-    function rangeStartsQuery(extraClause: Prisma.Sql, limitClause: Prisma.Sql) {
-        return Prisma.sql`
-            SELECT d.trainId, d.startHeartbeatAt AS start
-            FROM ${T} d
-            LEFT JOIN ${T} prev ON prev.endHeartbeatAt = d.startHeartbeatAt AND prev.trainId = d.trainId
-            WHERE prev.id IS NULL
-            ${from ? Prisma.sql`AND d.startHeartbeatAt >= ${from}` : Prisma.empty}
-            ${toClause}
-            ${extraClause}
-            ORDER BY d.startHeartbeatAt ${Prisma.raw(order)}
-            ${limitClause}
-        `;
+    const prev = alias(table, "prev");
+    function rangeStartsQuery(extraFilter: SQL | undefined, rangeLimit: number | undefined) {
+        const query = db.select(rangeFields)
+            .from(table)
+            .leftJoin(prev, and(eq(prev.endHeartbeatAt, table.startHeartbeatAt), eq(prev.trainId, table.trainId)))
+            .where(and(
+                isNull(prev.id),
+                from ? gte(table.startHeartbeatAt, from) : undefined,
+                startedByTo,
+                extraFilter
+            ))
+            .orderBy(ordered(table.startHeartbeatAt, order))
+            .$dynamic();
+        return rangeLimit ? query.limit(rangeLimit) : query;
     }
 
     const startQueries: Promise<{ trainId: number; start: Date }[]>[] = [];
@@ -782,34 +708,22 @@ async function findAvailabilityRanges(
         const perTrainLimit = Math.min(limitPerTrn, limit ?? Infinity);
         const trainsToQuery = trainIds ?? allTrainIds;
         if (trainsToQuery.length) {
-            startQueries.push(prisma.$queryRaw(Prisma.sql`
-                ${Prisma.join(trainsToQuery.map(trainId => Prisma.sql`(${rangeStartsQuery(
-                    Prisma.sql`AND d.trainId = ${trainId}`,
-                    Prisma.sql`LIMIT ${perTrainLimit + 1}`
-                )})`), ' UNION ALL ')}
-            `));
+            startQueries.push(db.select().from(unionAllAs(trainsToQuery.map(trainId =>
+                rangeStartsQuery(eq(table.trainId, trainId), perTrainLimit + 1)
+            ), "starts")));
         }
     } else {
         // Note that 1 is added to detect truncation
-        startQueries.push(prisma.$queryRaw(rangeStartsQuery(
-            trainClause,
-            limit ? Prisma.sql`LIMIT ${limit + 1}` : Prisma.empty
-        )));
+        startQueries.push(rangeStartsQuery(trainFilter, limit ? limit + 1 : undefined));
     }
     if (from) {
         // Ranges already in progress at `from` are clipped to start with the data which was current at `from`, which is
         //  each train's latest data which started before `from` (see `getDataIdsDuringHeartbeat`)
-        startQueries.push(prisma.$queryRaw(Prisma.sql`
-            SELECT d.trainId, d.startHeartbeatAt AS start
-            FROM ${T} d
-            JOIN (
-                SELECT trainId, MAX(startHeartbeatAt) AS startHeartbeatAt
-                FROM ${T} d
-                WHERE d.startHeartbeatAt < ${from} ${trainClause}
-                GROUP BY trainId
-            ) latest USING (trainId, startHeartbeatAt)
-            WHERE (d.endHeartbeatAt IS NULL OR d.endHeartbeatAt >= ${from}) ${toClause}
-        `));
+        const latest = latestDataPerTrain(table, and(lt(table.startHeartbeatAt, from), trainFilter));
+        startQueries.push(db.select(rangeFields)
+            .from(table)
+            .innerJoin(latest, joinLatest(table, latest))
+            .where(and(or(isNull(table.endHeartbeatAt), gte(table.endHeartbeatAt, from)), startedByTo)));
     }
     let starts = (await Promise.all(startQueries)).flat();
     if (!starts.length) return [];
@@ -826,25 +740,26 @@ async function findAvailabilityRanges(
     // --- Find where each range ends ---
 
     // A range ends with the first data which is still current, isn't continued by other data, or continues past `to`
-    const ends = await prisma.$queryRaw<{ idx: bigint; end: Date | null }[]>(Prisma.join(
-        starts.map((range, idx) => Prisma.sql`(
-            SELECT ${idx} AS idx, d.endHeartbeatAt AS end
-            FROM ${T} d
-            LEFT JOIN ${T} next ON next.trainId = d.trainId AND next.startHeartbeatAt = d.endHeartbeatAt
-            WHERE d.trainId = ${range.trainId}
-              AND d.startHeartbeatAt >= ${range.start}
-              ${toClause}
-              AND (
-                d.endHeartbeatAt IS NULL
-                ${to ? Prisma.sql`OR d.endHeartbeatAt > ${to}` : Prisma.empty}
-                OR next.id IS NULL
-              )
-            ORDER BY d.startHeartbeatAt ASC
-            LIMIT 1
-        )`),
-        ' UNION ALL '
-    ));
-    const endByIdx = new Map(ends.map(row => [Number(row.idx), row.end]));
+    const next = alias(table, "next");
+    const ends = await db.select().from(unionAllAs(starts.map((range, idx) => db
+        .select(aliasFields({ idx: sql<number>`${idx}`.mapWith(Number), end: table.endHeartbeatAt }))
+        .from(table)
+        .leftJoin(next, and(eq(next.trainId, table.trainId), eq(next.startHeartbeatAt, table.endHeartbeatAt)))
+        .where(and(
+            eq(table.trainId, range.trainId),
+            gte(table.startHeartbeatAt, range.start),
+            startedByTo,
+            or(
+                isNull(table.endHeartbeatAt),
+                to ? gt(table.endHeartbeatAt, to) : undefined,
+                isNull(next.id)
+            )
+        ))
+        .orderBy(asc(table.startHeartbeatAt))
+        .limit(1)
+        .$dynamic()
+    ), "ends"));
+    const endByIdx = new Map(ends.map(row => [row.idx, row.end]));
 
     return starts
         .map((range, idx) => ({ trainId: range.trainId, start: range.start, end: endByIdx.get(idx) ?? null }))
@@ -869,21 +784,20 @@ export async function getTrainsAvailability(
     const includeTimes = !apis.size || apis.has('TIMES');
     const includeGeo = !apis.size || apis.has('GEO');
     const hasAnyLimit = !!(limitPerTrn || limit);
-    const order = timeFilter?.from ? 'asc' : 'desc';
+    const order: Order = timeFilter?.from ? 'asc' : 'desc';
 
-    const trainRows = await prisma.train.findMany({
-        select: { id: true, trn: true },
-        where: trns.size ? { trn: { in: Array.from(trns) } } : undefined,
-        orderBy: { id: 'asc' }
-    });
+    const trainRows = await db.select({ id: train.id, trn: train.trn })
+        .from(train)
+        .where(trns.size ? inArray(train.trn, Array.from(trns)) : undefined)
+        .orderBy(asc(train.id));
     const trainIdToTrn = new Map(trainRows.map(train => [train.id, train.trn]));
 
     const [timesRanges, geoRanges] = await Promise.all([
         includeTimes
-            ? findAvailabilityRanges("TimesApiTrainData", trns.size ? [...trainIdToTrn.keys()] : null, [...trainIdToTrn.keys()], order, timeFilter, limit, limitPerTrn)
+            ? findAvailabilityRanges(timesApiTrainData, trns.size ? [...trainIdToTrn.keys()] : null, [...trainIdToTrn.keys()], order, timeFilter, limit, limitPerTrn)
             : [],
         includeGeo
-            ? findAvailabilityRanges("GeoApiTrainData", trns.size ? [...trainIdToTrn.keys()] : null, [...trainIdToTrn.keys()], order, timeFilter, limit, limitPerTrn)
+            ? findAvailabilityRanges(geoApiTrainData, trns.size ? [...trainIdToTrn.keys()] : null, [...trainIdToTrn.keys()], order, timeFilter, limit, limitPerTrn)
             : [],
     ]);
 
@@ -941,47 +855,88 @@ export async function getTrainsAvailability(
 
 // --- Times API ---
 
-const selectTimesTrainData = {
-    plannedDestinations: { select: {
-        destination: { select: {
-            name: true
-        } },
-        fromTime: true,
-        fromPlatform: true
-    } },
-    lastEventLocation: { select: {
-        raw: true,
-        parsedPlatform: { select: {
-            station: true,
-            platformNumber: true
-        } }
-    } },
-    lastEventType: { select: {
-        name: true
-    } },
-    lastEventTime: true,
-} as const satisfies TimesApiTrainDataSelect;
+const fromPlatform = alias(unparsedPlatform, "fromPlatform");
 
-type TimesTrainData = Prisma.TimesApiTrainDataGetPayload<{ select: typeof selectTimesTrainData }>;
+/**
+ * Selects Times API data, along with the given fields. Every field is aliased, so these can be selected from subqueries.
+ * The planned destinations are aggregated into JSON, since MariaDB doesn't support the lateral joins which Drizzle would
+ *  use to select them as a relation.
+ */
+function selectTimesData<TFields extends Record<string, MySqlColumn | SQL | SQL.Aliased>>(fields: TFields) {
+    const plannedDestinations = db
+        .select({
+            plannedDestinations: sql`JSON_ARRAYAGG(JSON_OBJECT(
+                'name', ${destination.name},
+                'fromTime', ${plannedDestination.fromTime},
+                'fromPlatform', ${fromPlatform.raw}
+            ))`
+        })
+        .from(plannedDestination)
+        .innerJoin(destination, eq(destination.id, plannedDestination.destinationId))
+        .innerJoin(fromPlatform, eq(fromPlatform.id, plannedDestination.fromPlatformId))
+        .where(eq(plannedDestination.statusId, timesApiTrainData.id));
+    return joinTimesTables(db
+        .select({
+            ...aliasFields({
+                trn: train.trn,
+                lastEventType: trainEventType.name,
+                rawLastEventLocation: unparsedPlatform.raw,
+                parsedStation: parsedPlatform.station,
+                parsedPlatformNumber: parsedPlatform.platformNumber,
+                lastEventTime: timesApiTrainData.lastEventTime,
+                plannedDestinations: sql<{
+                    name: string;
+                    fromTime: string;
+                    fromPlatform: string
+                }[]>`${plannedDestinations}`.mapWith(
+                    plannedDestinations =>
+                        plannedDestinations.map(dest => ({
+                            name: dest.name,
+                            from: {
+                                // Formatted like "2025-04-23 10:45:32.000", in the session's time zone, which is UTC
+                                time: new Date(dest.fromTime.replace(' ', 'T') + 'Z'),
+                                platformCode: dest.fromPlatform
+                            }
+                        }))
+                ),
+            }),
+            ...fields,
+        })
+        .from(timesApiTrainData)
+        .$dynamic());
+}
+
+/** Joins the tables which Times API data's fields and filters (see `trainDataFilters`) use */
+function joinTimesTables<TQuery extends MySqlSelect>(query: TQuery) {
+    return query
+        .innerJoin(train, eq(train.id, timesApiTrainData.trainId))
+        .innerJoin(trainEventType, eq(trainEventType.id, timesApiTrainData.lastEventTypeId))
+        .innerJoin(unparsedPlatform, eq(unparsedPlatform.id, timesApiTrainData.lastEventLocationId))
+        .leftJoin(parsedPlatform, eq(parsedPlatform.id, unparsedPlatform.parsedPlatformId));
+}
+
+/** Filters Times API data to the data whose first planned destination is one of the given destinations */
+function timesDestinationFilter(destinations: Set<string>): SQL {
+    return inArray(
+        timesApiTrainData.firstPlannedDestinationId,
+        db.select({ id: destination.id }).from(destination).where(inArray(destination.name, Array.from(destinations)))
+    );
+}
+
+type TimesTrainData = Awaited<ReturnType<typeof selectTimesData<{}>>>[number];
 
 type TimesTrainHistoryEntry = TrainHistoryEntry<Omit<TimesAPI.ParsedTrain, 'nextPlatforms'>>;
 
-function formatTimesData(data?: TimesTrainData): Omit<TimesAPI.ParsedTrain, 'nextPlatforms'> {
-    if (data) return {
+function formatTimesData(data: TimesTrainData): Omit<TimesAPI.ParsedTrain, 'nextPlatforms'> {
+    return {
         // The database doesn't return planned destinations in any particular order
-        plannedDestinations: TimesAPI.normalisePlannedDestinations(data.plannedDestinations.map(dest => ({
-            name: dest.destination.name,
-            from: {
-                time: dest.fromTime,
-                platformCode: dest.fromPlatform.raw
-            }
-        }))),
+        plannedDestinations: TimesAPI.normalisePlannedDestinations(data.plannedDestinations),
         lastEvent: {
-            location: data.lastEventLocation.parsedPlatform ? {
-                station: data.lastEventLocation.parsedPlatform.station,
-                platformNumber: data.lastEventLocation.parsedPlatform.platformNumber
-            } : data.lastEventLocation.raw,
-            type: data.lastEventType.name,
+            location: data.parsedStation !== null ? {
+                station: data.parsedStation,
+                platformNumber: data.parsedPlatformNumber
+            } : data.rawLastEventLocation,
+            type: data.lastEventType,
             time: data.lastEventTime
         }
     };
@@ -1005,32 +960,45 @@ export function timesDataKey(data: Omit<TimesAPI.ParsedTrain, 'nextPlatforms'>):
 
 // --- Geo API ---
 
-const selectGeoTrainData = {
-    destination: { select: {
-        name: true
-    } },
-    rawLastSeen: true,
-    lastEventPlatform: { select: {
-        station: true,
-        platformNumber: true
-    } },
-    lastEventType: { select: {
-        name: true
-    } },
-    lastEventTime: true,
-} as const satisfies GeoApiTrainDataSelect;
+/** Selects Geo API data, along with the given fields. Every field is aliased, so these can be selected from subqueries. */
+function selectGeoData<TFields extends Record<string, MySqlColumn | SQL | SQL.Aliased>>(fields: TFields) {
+    return joinGeoTables(db
+        .select({
+            ...aliasFields({
+                trn: train.trn,
+                destination: destination.name,
+                rawLastSeen: geoApiTrainData.rawLastSeen,
+                lastEventType: trainEventType.name,
+                parsedStation: parsedPlatform.station,
+                parsedPlatformNumber: parsedPlatform.platformNumber,
+                lastEventTime: geoApiTrainData.lastEventTime,
+            }),
+            ...fields,
+        })
+        .from(geoApiTrainData)
+        .$dynamic());
+}
 
-type GeoTrainData = Prisma.GeoApiTrainDataGetPayload<{ select: typeof selectGeoTrainData }>;
+/** Joins the tables which Geo API data's fields and filters (see `trainDataFilters`) use */
+function joinGeoTables<TQuery extends MySqlSelect>(query: TQuery) {
+    return query
+        .innerJoin(train, eq(train.id, geoApiTrainData.trainId))
+        .innerJoin(destination, eq(destination.id, geoApiTrainData.destinationId))
+        .leftJoin(trainEventType, eq(trainEventType.id, geoApiTrainData.lastEventTypeId))
+        .leftJoin(parsedPlatform, eq(parsedPlatform.id, geoApiTrainData.lastEventPlatformId));
+}
+
+type GeoTrainData = Awaited<ReturnType<typeof selectGeoData<{}>>>[number];
 
 type GeoTrainHistoryEntry = TrainHistoryEntry<GeoAPI.TrainStatus>;
 
-function formatGeoData(data?: GeoTrainData): GeoAPI.TrainStatus {
-    if (data) return {
-        destination: data.destination.name,
-        lastSeen: data.lastEventPlatform ? {
-            station: data.lastEventPlatform.station,
-            platformNumber: data.lastEventPlatform.platformNumber,
-            type: data.lastEventType.name,
+function formatGeoData(data: GeoTrainData): GeoAPI.TrainStatus {
+    return {
+        destination: data.destination,
+        lastSeen: data.parsedStation !== null ? {
+            station: data.parsedStation,
+            platformNumber: data.parsedPlatformNumber,
+            type: data.lastEventType,
             time: data.lastEventTime
         } : data.rawLastSeen
     };
@@ -1053,88 +1021,54 @@ export async function addHeartbeatError(heartbeatStartedAt: Date, api: ApiType, 
         message,
         heartbeat: { startedAt: heartbeatStartedAt, endedAt: null }
     } satisfies HeartbeatError);
-    await prisma.heartbeatError.create({
-        data: {
-            heartbeatAt: heartbeatStartedAt,
-            api,
-            message
-        },
-        // Prisma forces us to select *something* for some reason, but we don't actually need the result
-        select: { heartbeatAt: true }
+    await db.insert(heartbeatError).values({
+        heartbeatAt: heartbeatStartedAt,
+        api,
+        message
     }).catch(e => {
         // Failing to save diagnostics shouldn't stop the live data from updating
         console.error("Failed to save heartbeat error:", e);
     });
 }
 
-export async function addHeartbeatWarning(heartbeatStartedAt: Date, api: ApiType, data: InputJsonValue): Promise<void> {
+export async function addHeartbeatWarning(heartbeatStartedAt: Date, api: ApiType, data: JsonValue): Promise<void> {
     eventEmitter.emit("heartbeat-warning", {
         api,
-        // Prisma accepts some values which aren't JSON (e.g., anything with `toJSON`), but they're the same once
-        //  they're sent, since stream messages are converted to JSON too
-        data: data as JsonValue,
+        data,
         heartbeat: { startedAt: heartbeatStartedAt, endedAt: null }
     } satisfies HeartbeatWarning);
-    await prisma.heartbeatWarning.create({
-        data: {
-            heartbeatAt: heartbeatStartedAt,
-            api,
-            data,
-        },
-        // Prisma forces us to select *something* for some reason, but we don't actually need the result
-        select: { heartbeatAt: true }
+    await db.insert(heartbeatWarning).values({
+        heartbeatAt: heartbeatStartedAt,
+        api,
+        data,
     }).catch(e => {
         // Failing to save diagnostics shouldn't stop the live data from updating
         console.error("Failed to save heartbeat warning:", e);
     });
 }
 
+const heartbeatTimesFields = { startedAt: heartbeat.startedAt, endedAt: heartbeat.endedAt };
+
 export async function getHeartbeatErrors(timeFilter?: TimeFilter, apis?: ApiType[]): Promise<HeartbeatError[]> {
-    return prisma.heartbeatError.findMany({
-        select: {
-            api: true,
-            message: true,
-            heartbeat: {
-                select: {
-                    startedAt: true,
-                    endedAt: true
-                }
-            }
-        },
-        where: {
-            heartbeat: timeFilter?.toHeartbeatFilter(),
-            api: apis && apis.length > 0 ? { in: apis } : undefined,
-        },
-        orderBy: {
-            heartbeat: {
-                startedAt: 'desc'
-            }
-        }
-    });
+    return db.select({ api: heartbeatError.api, message: heartbeatError.message, heartbeat: heartbeatTimesFields })
+        .from(heartbeatError)
+        .innerJoin(heartbeat, eq(heartbeat.startedAt, heartbeatError.heartbeatAt))
+        .where(and(
+            timeFilter?.toHeartbeatFilter(),
+            apis?.length ? inArray(heartbeatError.api, apis) : undefined
+        ))
+        .orderBy(desc(heartbeat.startedAt));
 }
 
 export async function getHeartbeatWarnings(timeFilter?: TimeFilter, apis?: ApiType[]): Promise<HeartbeatWarning[]> {
-    return prisma.heartbeatWarning.findMany({
-        select: {
-            api: true,
-            data: true,
-            heartbeat: {
-                select: {
-                    startedAt: true,
-                    endedAt: true
-                }
-            }
-        },
-        where: {
-            heartbeat: timeFilter?.toHeartbeatFilter(),
-            api: apis && apis.length > 0 ? { in: apis } : undefined,
-        },
-        orderBy: {
-            heartbeat: {
-                startedAt: 'desc'
-            }
-        }
-    });
+    return db.select({ api: heartbeatWarning.api, data: heartbeatWarning.data, heartbeat: heartbeatTimesFields })
+        .from(heartbeatWarning)
+        .innerJoin(heartbeat, eq(heartbeat.startedAt, heartbeatWarning.heartbeatAt))
+        .where(and(
+            timeFilter?.toHeartbeatFilter(),
+            apis?.length ? inArray(heartbeatWarning.api, apis) : undefined
+        ))
+        .orderBy(desc(heartbeat.startedAt));
 }
 
 // --- Snapshots ---
@@ -1147,23 +1081,19 @@ export type MatchStrategy = 'before' | 'after' | 'exact' | 'nearest';
  *  started before it.
  */
 async function findHeartbeat(time: Date, matchStrategy: MatchStrategy): Promise<Date | null> {
-    const select = { startedAt: true, endedAt: true } as const;
-
     if (matchStrategy === 'nearest') {
         // A heartbeat's time is considered to be its end (or its start if it hasn't ended). Since heartbeats don't
         //  overlap, the nearest is one of the two latest heartbeats which started before `time` or the first after it.
         const [before, after] = await Promise.all([
-            prisma.heartbeat.findMany({
-                select,
+            db.query.heartbeat.findMany({
                 where: { startedAt: { lte: time } },
                 orderBy: { startedAt: 'desc' },
-                take: 2
+                limit: 2
             }),
-            prisma.heartbeat.findMany({
-                select,
+            db.query.heartbeat.findMany({
                 where: { startedAt: { gt: time } },
                 orderBy: { startedAt: 'asc' },
-                take: 1
+                limit: 1
             }),
         ]);
         function distance(heartbeat: HeartbeatTimes) {
@@ -1173,8 +1103,7 @@ async function findHeartbeat(time: Date, matchStrategy: MatchStrategy): Promise<
         return candidates[0]?.startedAt ?? null;
     }
 
-    const latest = await prisma.heartbeat.findFirst({
-        select,
+    const latest = await db.query.heartbeat.findFirst({
         where: { startedAt: { lte: time } },
         orderBy: { startedAt: 'desc' }
     });
@@ -1187,9 +1116,8 @@ async function findHeartbeat(time: Date, matchStrategy: MatchStrategy): Promise<
             return latestInProgress ? latest.startedAt : null;
         case 'after': {
             if (latestInProgress) return latest.startedAt;
-            const next = await prisma.heartbeat.findFirst({
-                select,
-                where: { startedAt: { gt: time }, endedAt: { not: null } },
+            const next = await db.query.heartbeat.findFirst({
+                where: { startedAt: { gt: time }, endedAt: { isNotNull: true } },
                 orderBy: { startedAt: 'asc' }
             });
             return next?.startedAt ?? null;
@@ -1203,23 +1131,13 @@ async function findHeartbeat(time: Date, matchStrategy: MatchStrategy): Promise<
  * Checking `startHeartbeatAt <= heartbeat < endHeartbeatAt` directly can't use an index efficiently, so is very slow.
  * Instead, this relies on a train's data for an API never overlapping, so the data current during a heartbeat can only
  *  be the train's latest data which started at or before the heartbeat.
- * The `GROUP BY` allows MariaDB to find that using a single lookup per train in the `(trainId, startHeartbeatAt)` index.
  */
-async function getDataIdsDuringHeartbeat(
-    table: "TimesApiTrainData" | "GeoApiTrainData",
-    heartbeatStartedAt: Date
-): Promise<number[]> {
-    const rows = await prisma.$queryRaw<{ id: number }[]>`
-        SELECT data.id
-        FROM ${Prisma.raw(table)} data
-        JOIN (
-            SELECT trainId, MAX(startHeartbeatAt) AS startHeartbeatAt
-            FROM ${Prisma.raw(table)}
-            WHERE startHeartbeatAt <= ${heartbeatStartedAt}
-            GROUP BY trainId
-        ) latest USING (trainId, startHeartbeatAt)
-        WHERE data.endHeartbeatAt IS NULL OR data.endHeartbeatAt > ${heartbeatStartedAt}
-    `;
+async function getDataIdsDuringHeartbeat(data: TrainDataTable, heartbeatStartedAt: Date): Promise<number[]> {
+    const latest = latestDataPerTrain(data, lte(data.startHeartbeatAt, heartbeatStartedAt));
+    const rows = await db.select({ id: data.id })
+        .from(data)
+        .innerJoin(latest, joinLatest(data, latest))
+        .where(or(isNull(data.endHeartbeatAt), gt(data.endHeartbeatAt, heartbeatStartedAt)));
     return rows.map(row => row.id);
 }
 
@@ -1236,86 +1154,47 @@ export async function getSnapshot(
     errors: Omit<HeartbeatError, 'heartbeat'>[];
     warnings: Omit<HeartbeatWarning, 'heartbeat'>[];
 }> {
-    const trainFilter = trns && trns.size > 0 ? { trn: { in: Array.from(trns) } } : undefined;
-    const eventTypeFilter = eventTypes && eventTypes.size > 0 ? { name: { in: Array.from(eventTypes) } } : undefined;
-    const locationFilter = locations && locations.length > 0 ? { OR: locations } : undefined;
-    const destinationFilter = destinations && destinations.size > 0 ? { name: { in: Array.from(destinations) } } : undefined;
-
-    const heartbeatSelect = {
-        startedAt: true,
-        endedAt: true,
-        errors: { select: {
-            api: true,
-            message: true
-        } },
-        warnings: { select: {
-            api: true,
-            data: true
-        } }
-    } satisfies HeartbeatSelect;
-
     const heartbeatStartedAt = await findHeartbeat(time, matchStrategy);
     if (!heartbeatStartedAt) return null;
 
-    const [heartbeat, timesApiIds, geoApiIds] = await Promise.all([
-        prisma.heartbeat.findUnique({
-            where: { startedAt: heartbeatStartedAt },
-            select: heartbeatSelect
-        }),
-        getDataIdsDuringHeartbeat("TimesApiTrainData", heartbeatStartedAt),
-        getDataIdsDuringHeartbeat("GeoApiTrainData", heartbeatStartedAt),
+    const [heartbeatTimes, errors, warnings, timesApiIds, geoApiIds] = await Promise.all([
+        db.query.heartbeat.findFirst({ where: { startedAt: { eq: heartbeatStartedAt } } }),
+        db.select({ api: heartbeatError.api, message: heartbeatError.message })
+            .from(heartbeatError)
+            .where(eq(heartbeatError.heartbeatAt, heartbeatStartedAt))
+            .orderBy(asc(heartbeatError.id)),
+        db.select({ api: heartbeatWarning.api, data: heartbeatWarning.data })
+            .from(heartbeatWarning)
+            .where(eq(heartbeatWarning.heartbeatAt, heartbeatStartedAt))
+            .orderBy(asc(heartbeatWarning.id)),
+        getDataIdsDuringHeartbeat(timesApiTrainData, heartbeatStartedAt),
+        getDataIdsDuringHeartbeat(geoApiTrainData, heartbeatStartedAt),
     ]);
-    if (!heartbeat) return null;
-    const [timesApiData,geoApiData] = await Promise.all([
-        prisma.timesApiTrainData.findMany({
-            select: {
-                train: { select: { trn: true } },
-                ...selectTimesTrainData
-            },
-            where: {
-                id: { in: timesApiIds },
-                train: trainFilter,
-                lastEventType: eventTypeFilter,
-                lastEventLocation: {
-                    parsedPlatform: locationFilter
-                },
-                firstPlannedDestination: destinationFilter
-            }
-        }),
-        prisma.geoApiTrainData.findMany({
-            select: {
-                train: { select: { trn: true } },
-                ...selectGeoTrainData
-            },
-            where: {
-                id: { in: geoApiIds },
-                train: trainFilter,
-                lastEventType: eventTypeFilter,
-                lastEventPlatform: locationFilter,
-                destination: destinationFilter
-            }
-        })
+    if (!heartbeatTimes) return null;
+
+    const [timesApiData, geoApiData] = await Promise.all([
+        selectTimesData({}).where(and(
+            inArray(timesApiTrainData.id, timesApiIds),
+            ...trainDataFilters(timesApiTrainData, { trns, eventTypes, locations }),
+            destinations?.size ? timesDestinationFilter(destinations) : undefined
+        )),
+        selectGeoData({}).where(and(
+            inArray(geoApiTrainData.id, geoApiIds),
+            ...trainDataFilters(geoApiTrainData, { trns, eventTypes, locations }),
+            destinations?.size ? inArray(destination.name, Array.from(destinations)) : undefined
+        )),
     ]);
     const statusLastChanged = await getLastStatusChanges(
-        [...new Set([...timesApiData, ...geoApiData].map(data => data.train.trn))],
+        [...new Set([...timesApiData, ...geoApiData].map(data => data.trn))],
         heartbeatStartedAt
     );
 
     return {
-        heartbeat: {
-            startedAt: heartbeat.startedAt,
-            endedAt: heartbeat.endedAt
-        },
-        timesApiTrains: new Map(timesApiData.map(data => [
-            data.train.trn,
-            formatTimesData(data)
-        ])),
-        geoApiTrains: new Map(geoApiData.map(data => [
-            data.train.trn,
-            formatGeoData(data)
-        ])),
+        heartbeat: heartbeatTimes,
+        timesApiTrains: new Map(timesApiData.map(data => [data.trn, formatTimesData(data)])),
+        geoApiTrains: new Map(geoApiData.map(data => [data.trn, formatGeoData(data)])),
         statusLastChanged,
-        errors: heartbeat.errors,
-        warnings: heartbeat.warnings,
+        errors,
+        warnings,
     };
 }

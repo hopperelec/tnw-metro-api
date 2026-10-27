@@ -6,23 +6,22 @@
   "scripts": {
     "start": "bun src/index.ts",
     "typecheck": "tsc",
-    "prisma:generate": "bun node_modules/prisma/build/index.js generate",
-    "prisma:create-migration": "bun node_modules/prisma/build/index.js migrate dev",
-    "prisma:deploy": "bun node_modules/prisma/build/index.js migrate deploy"
+    "db:create-migration": "bun node_modules/drizzle-kit/bin.cjs generate",
+    "db:migrate": "bun src/db/migrate.ts",
+    "db:studio": "bun node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.1",
     "@fastify/swagger": "^9.4.2",
     "@fastify/swagger-ui": "^5.2.2",
-    "@prisma/adapter-mariadb": "^7.2.0",
-    "@prisma/client": "^7.2.0",
     "csv-parser": "^3.2.0",
-    "fastify": "^5.6.2"
+    "drizzle-orm": "1.0.0-rc.5",
+    "fastify": "^5.6.2",
+    "mysql2": "^3.24.6"
   },
   "devDependencies": {
     "@types/bun": "^1.4.3",
-    "mariadb": "^3.5.3",
-    "prisma": "^7.2.0",
+    "drizzle-kit": "1.0.0-rc.5",
     "tsx": "^4.23.15",
     "typescript": "^5.8.2"
   },

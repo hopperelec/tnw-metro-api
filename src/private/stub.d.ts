@@ -2,6 +2,7 @@
 // `./check-stub.ts` checks that these match the library, if it is installed.
 
 import type {Readable} from "stream";
+import type {JsonValue} from "../types.ts";
 
 // --- Gateway ---
 
@@ -26,9 +27,6 @@ export type TrainStatus = {
     /** e.g., "Departed Monument platform 2 at 12:34" */
     lastSeen: string;
 };
-
-/** Defined here instead of using Prisma's JSON types, so that the library doesn't depend on Prisma */
-export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export type GeoApiWarning = {
     message: string;

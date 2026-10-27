@@ -1,4 +1,5 @@
-import type {HeartbeatWhereInput} from "../generated/prisma/models/Heartbeat";
+import {and, gte, lte, type SQL} from "drizzle-orm";
+import {heartbeat} from "./db/schema";
 
 export default class TimeFilter {
     from?: Date;
@@ -26,15 +27,10 @@ export default class TimeFilter {
         return date;
     }
 
-    toHeartbeatFilter(): HeartbeatWhereInput {
-        if (!this.from && !this.to) return;
-        const filter: HeartbeatWhereInput = {};
-        if (this.from) {
-            filter.endedAt = { gte: this.from };
-        }
-        if (this.to) {
-            filter.startedAt = { lte: this.to };
-        }
-        return filter;
+    toHeartbeatFilter(): SQL | undefined {
+        return and(
+            this.from ? gte(heartbeat.endedAt, this.from) : undefined,
+            this.to ? lte(heartbeat.startedAt, this.to) : undefined
+        );
     }
 }

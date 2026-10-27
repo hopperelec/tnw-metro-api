@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import TimeFilter from "../../../../time-filter";
 import {convertContainers} from "../../../props";
-import {ApiType} from "../../../../../generated/prisma/enums";
+import {ApiType} from "../../../../db/schema";
 import {getHeartbeatErrors, getHeartbeatWarnings} from "../../../../history";
 
 export default function registerEndpoint(app: FastifyInstance) {

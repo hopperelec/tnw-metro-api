@@ -1,7 +1,7 @@
 import {LOCATION_ABBREVIATIONS} from "./constants";
 import * as TimesAPI from "./parsing/rti/times-api";
 import * as GeoAPI from "./parsing/rti/geo-api";
-import {ApiType} from "../generated/prisma/enums";
+import type {ApiType} from "./db/schema";
 
 export type LocationAbbreviation = keyof typeof LOCATION_ABBREVIATIONS;
 export type LineName = 'green' | 'yellow';
@@ -21,6 +21,8 @@ export interface TrainFilters {
     locations?: ParsedLocation[];
     destinations?: Set<string>;
 }
+
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export type CollatedTrain = Partial<{
     timesAPI: TimesAPI.ParsedTrain | Omit<TimesAPI.ParsedTrain, 'nextPlatforms'>

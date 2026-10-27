@@ -4,8 +4,8 @@ import {type DueTimes, setDueTimes} from "./due-times";
 import {eventEmitter} from "./events";
 import {addHeartbeatError, startHeartbeat, endHeartbeat, addApiData} from "./history";
 import type {CollatedTrain} from "./types";
-import {ApiType} from "../generated/prisma/enums";
-import type {JsonValue} from "@prisma/client/runtime/client";
+import type {ApiType} from "./db/schema";
+import type {JsonValue} from "./types";
 import {pollAndParseTimes} from "./parsing/rti/times-api";
 import {pollAndParseGeoAPI} from "./parsing/rti/geo-api";
 

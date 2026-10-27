@@ -1,0 +1,1381 @@
+{
+  "version": "6",
+  "dialect": "mysql",
+  "id": "4fef81a2-71e3-4a93-9eff-de3b9b97da01",
+  "prevIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
+  "ddl": [
+    {
+      "name": "Destination",
+      "entityType": "tables"
+    },
+    {
+      "name": "GeoApiTrainData",
+      "entityType": "tables"
+    },
+    {
+      "name": "Heartbeat",
+      "entityType": "tables"
+    },
+    {
+      "name": "HeartbeatError",
+      "entityType": "tables"
+    },
+    {
+      "name": "HeartbeatWarning",
+      "entityType": "tables"
+    },
+    {
+      "name": "ParsedPlatform",
+      "entityType": "tables"
+    },
+    {
+      "name": "PlannedDestination",
+      "entityType": "tables"
+    },
+    {
+      "name": "TimesApiTrainData",
+      "entityType": "tables"
+    },
+    {
+      "name": "Train",
+      "entityType": "tables"
+    },
+    {
+      "name": "TrainEventType",
+      "entityType": "tables"
+    },
+    {
+      "name": "UnparsedPlatform",
+      "entityType": "tables"
+    },
+    {
+      "table": "Destination",
+      "name": "id",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": true,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "Destination",
+      "name": "name",
+      "type": "varchar(191)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": "utf8mb4",
+      "collation": "utf8mb4_uca1400_nopad_as_cs",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "id",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": true,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "trainId",
+      "type": "smallint unsigned",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "destinationId",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "rawLastSeen",
+      "type": "varchar(191)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "lastEventPlatformId",
+      "type": "int",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "lastEventTypeId",
+      "type": "tinyint unsigned",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "lastEventTime",
+      "type": "timestamp(3)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "startHeartbeatAt",
+      "type": "timestamp(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "endHeartbeatAt",
+      "type": "timestamp(3)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "Heartbeat",
+      "name": "startedAt",
+      "type": "timestamp(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "Heartbeat",
+      "name": "endedAt",
+      "type": "timestamp(3)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "HeartbeatError",
+      "name": "id",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": true,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "HeartbeatError",
+      "name": "api",
+      "type": "enum('TIMES','GEO','GATEWAY')",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "HeartbeatError",
+      "name": "message",
+      "type": "text",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "HeartbeatError",
+      "name": "heartbeatAt",
+      "type": "timestamp(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "HeartbeatWarning",
+      "name": "id",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": true,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "HeartbeatWarning",
+      "name": "api",
+      "type": "enum('TIMES','GEO','GATEWAY')",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "HeartbeatWarning",
+      "name": "data",
+      "type": "json",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "HeartbeatWarning",
+      "name": "heartbeatAt",
+      "type": "timestamp(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ParsedPlatform",
+      "name": "id",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": true,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ParsedPlatform",
+      "name": "station",
+      "type": "varchar(191)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": "utf8mb4",
+      "collation": "utf8mb4_uca1400_nopad_as_cs",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "ParsedPlatform",
+      "name": "platformNumber",
+      "type": "tinyint unsigned",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "PlannedDestination",
+      "name": "statusId",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "PlannedDestination",
+      "name": "destinationId",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "PlannedDestination",
+      "name": "fromTime",
+      "type": "timestamp(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "PlannedDestination",
+      "name": "fromPlatformId",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "id",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": true,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "trainId",
+      "type": "smallint unsigned",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "lastEventTypeId",
+      "type": "tinyint unsigned",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "lastEventTime",
+      "type": "timestamp(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "lastEventLocationId",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "startHeartbeatAt",
+      "type": "timestamp(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "endHeartbeatAt",
+      "type": "timestamp(3)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "firstPlannedDestinationId",
+      "type": "int",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "Train",
+      "name": "id",
+      "type": "smallint unsigned",
+      "notNull": true,
+      "autoIncrement": true,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "Train",
+      "name": "trn",
+      "type": "varchar(191)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": "utf8mb4",
+      "collation": "utf8mb4_uca1400_nopad_as_cs",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "TrainEventType",
+      "name": "id",
+      "type": "tinyint unsigned",
+      "notNull": true,
+      "autoIncrement": true,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "TrainEventType",
+      "name": "name",
+      "type": "varchar(191)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": "utf8mb4",
+      "collation": "utf8mb4_uca1400_nopad_as_cs",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "UnparsedPlatform",
+      "name": "id",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": true,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "UnparsedPlatform",
+      "name": "raw",
+      "type": "varchar(191)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": "utf8mb4",
+      "collation": "utf8mb4_uca1400_nopad_as_cs",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "UnparsedPlatform",
+      "name": "parsedPlatformId",
+      "type": "int",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "PlannedDestination",
+      "name": "PRIMARY",
+      "columns": [
+        "statusId",
+        "destinationId",
+        "fromTime"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "Destination",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "Heartbeat",
+      "name": "PRIMARY",
+      "columns": [
+        "startedAt"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "HeartbeatError",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "HeartbeatWarning",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "ParsedPlatform",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "Train",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "TrainEventType",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "UnparsedPlatform",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_trainId_fkey",
+      "columns": [
+        "trainId"
+      ],
+      "tableTo": "Train",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_startHeartbeatAt_fkey",
+      "columns": [
+        "startHeartbeatAt"
+      ],
+      "tableTo": "Heartbeat",
+      "columnsTo": [
+        "startedAt"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_endHeartbeatAt_fkey",
+      "columns": [
+        "endHeartbeatAt"
+      ],
+      "tableTo": "Heartbeat",
+      "columnsTo": [
+        "startedAt"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_destinationId_fkey",
+      "columns": [
+        "destinationId"
+      ],
+      "tableTo": "Destination",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_lastEventPlatformId_fkey",
+      "columns": [
+        "lastEventPlatformId"
+      ],
+      "tableTo": "ParsedPlatform",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_lastEventTypeId_fkey",
+      "columns": [
+        "lastEventTypeId"
+      ],
+      "tableTo": "TrainEventType",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "HeartbeatError",
+      "name": "HeartbeatError_heartbeatAt_fkey",
+      "columns": [
+        "heartbeatAt"
+      ],
+      "tableTo": "Heartbeat",
+      "columnsTo": [
+        "startedAt"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "HeartbeatWarning",
+      "name": "HeartbeatWarning_heartbeatAt_fkey",
+      "columns": [
+        "heartbeatAt"
+      ],
+      "tableTo": "Heartbeat",
+      "columnsTo": [
+        "startedAt"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "PlannedDestination",
+      "name": "PlannedDestination_statusId_fkey",
+      "columns": [
+        "statusId"
+      ],
+      "tableTo": "TimesApiTrainData",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "PlannedDestination",
+      "name": "PlannedDestination_destinationId_fkey",
+      "columns": [
+        "destinationId"
+      ],
+      "tableTo": "Destination",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "PlannedDestination",
+      "name": "PlannedDestination_fromPlatformId_fkey",
+      "columns": [
+        "fromPlatformId"
+      ],
+      "tableTo": "UnparsedPlatform",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_trainId_fkey",
+      "columns": [
+        "trainId"
+      ],
+      "tableTo": "Train",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_startHeartbeatAt_fkey",
+      "columns": [
+        "startHeartbeatAt"
+      ],
+      "tableTo": "Heartbeat",
+      "columnsTo": [
+        "startedAt"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_endHeartbeatAt_fkey",
+      "columns": [
+        "endHeartbeatAt"
+      ],
+      "tableTo": "Heartbeat",
+      "columnsTo": [
+        "startedAt"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_lastEventLocationId_fkey",
+      "columns": [
+        "lastEventLocationId"
+      ],
+      "tableTo": "UnparsedPlatform",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_lastEventTypeId_fkey",
+      "columns": [
+        "lastEventTypeId"
+      ],
+      "tableTo": "TrainEventType",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_firstPlannedDestinationId_fkey",
+      "columns": [
+        "firstPlannedDestinationId"
+      ],
+      "tableTo": "Destination",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "UnparsedPlatform",
+      "name": "UnparsedPlatform_parsedPlatformId_fkey",
+      "columns": [
+        "parsedPlatformId"
+      ],
+      "tableTo": "ParsedPlatform",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "nameExplicit": true,
+      "entityType": "fks"
+    },
+    {
+      "table": "Destination",
+      "name": "Destination_name_key",
+      "columns": [
+        {
+          "value": "name",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_trainId_startHeartbeatAt_key",
+      "columns": [
+        {
+          "value": "trainId",
+          "isExpression": false
+        },
+        {
+          "value": "startHeartbeatAt",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_destinationId_fkey",
+      "columns": [
+        {
+          "value": "destinationId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_lastEventTypeId_fkey",
+      "columns": [
+        {
+          "value": "lastEventTypeId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_lastEventPlatformId_fkey",
+      "columns": [
+        {
+          "value": "lastEventPlatformId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_startHeartbeatAt_fkey",
+      "columns": [
+        {
+          "value": "startHeartbeatAt",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "GeoApiTrainData",
+      "name": "GeoApiTrainData_endHeartbeatAt_fkey",
+      "columns": [
+        {
+          "value": "endHeartbeatAt",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "HeartbeatError",
+      "name": "HeartbeatError_heartbeatAt_fkey",
+      "columns": [
+        {
+          "value": "heartbeatAt",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "HeartbeatWarning",
+      "name": "HeartbeatWarning_heartbeatAt_fkey",
+      "columns": [
+        {
+          "value": "heartbeatAt",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "ParsedPlatform",
+      "name": "ParsedPlatform_station_platformNumber_key",
+      "columns": [
+        {
+          "value": "station",
+          "isExpression": false
+        },
+        {
+          "value": "platformNumber",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "PlannedDestination",
+      "name": "PlannedDestination_destinationId_fkey",
+      "columns": [
+        {
+          "value": "destinationId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "PlannedDestination",
+      "name": "PlannedDestination_fromPlatformId_fkey",
+      "columns": [
+        {
+          "value": "fromPlatformId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_trainId_startHeartbeatAt_key",
+      "columns": [
+        {
+          "value": "trainId",
+          "isExpression": false
+        },
+        {
+          "value": "startHeartbeatAt",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_lastEventLocationId_fkey",
+      "columns": [
+        {
+          "value": "lastEventLocationId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_lastEventTypeId_fkey",
+      "columns": [
+        {
+          "value": "lastEventTypeId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_startHeartbeatAt_fkey",
+      "columns": [
+        {
+          "value": "startHeartbeatAt",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_endHeartbeatAt_fkey",
+      "columns": [
+        {
+          "value": "endHeartbeatAt",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "TimesApiTrainData",
+      "name": "TimesApiTrainData_firstPlannedDestinationId_fkey",
+      "columns": [
+        {
+          "value": "firstPlannedDestinationId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "Train",
+      "name": "Train_trn_key",
+      "columns": [
+        {
+          "value": "trn",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "TrainEventType",
+      "name": "TrainEventType_name_key",
+      "columns": [
+        {
+          "value": "name",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "UnparsedPlatform",
+      "name": "UnparsedPlatform_raw_key",
+      "columns": [
+        {
+          "value": "raw",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "UnparsedPlatform",
+      "name": "UnparsedPlatform_parsedPlatformId_fkey",
+      "columns": [
+        {
+          "value": "parsedPlatformId",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    }
+  ],
+  "renames": []
+}
